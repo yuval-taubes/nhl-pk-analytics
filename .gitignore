@@ -1,0 +1,11 @@
+bin/
+obj/
+*.suo
+*.user
+.vs/
+__pycache__/
+*.pyc
+outputs/
+models/
+node_modules/
+.env

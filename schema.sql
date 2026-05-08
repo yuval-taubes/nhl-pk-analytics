@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS teams (
 CREATE TABLE IF NOT EXISTS players (
     player_id INTEGER PRIMARY KEY,
     full_name VARCHAR(100),
-    position VARCHAR(2)
+    position VARCHAR(5)  -- was VARCHAR(2), widened for 'NA'
 );
 
 CREATE TABLE IF NOT EXISTS games (
@@ -70,11 +70,12 @@ CREATE TABLE IF NOT EXISTS possessions (
 );
 
 -- Expected goals and shot details
+-- Expected goals and shot details
 CREATE TABLE IF NOT EXISTS shots (
     shot_id SERIAL PRIMARY KEY,
     event_id INTEGER REFERENCES events(event_id),
-    possession_id INTEGER REFERENCES possessions(possession_id),
-    shooter_id INTEGER REFERENCES players(player_id),
+    possession_id INTEGER REFERENCES possessions(possession_id) NULL,
+    shooter_id INTEGER REFERENCES players(player_id) NULL,
     x INTEGER,
     y INTEGER,
     x_norm INTEGER,
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS event_players (
     player_id INTEGER REFERENCES players(player_id),
     team_id INTEGER REFERENCES teams(team_id),
     is_home BOOLEAN,
-    PRIMARY KEY (event_id, player_id)
+    original_event_idx INTEGER
 );
 
 -- Pre-computed causal model outputs

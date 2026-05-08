@@ -21,35 +21,42 @@ public class ZoneEntryDetector
     /// <summary>
     /// Analyzes a window of events to detect and classify a zone entry.
     /// </summary>
-    public static (EntryClassification classification, int entryEventIdx, int? carrierId)?
-        DetectZoneEntry(List<ProcessedEvent> events, int currentIdx, int teamId, int homeTeamId)
-    {
-        if (currentIdx < 2) return null;
+ public static (EntryClassification classification, int entryEventIdx, int? carrierId)?
+    DetectZoneEntry(List<ProcessedEvent> events, int currentIdx, int teamId, int homeTeamId)
+{
+    if (currentIdx < 2) return null;
 
-        var current = events[currentIdx];
-        var prev = events[currentIdx - 1];
-        var twoBack = events[currentIdx - 2];
+    var current = events[currentIdx];
+    var prev = events[currentIdx - 1];
+    var twoBack = events[currentIdx - 2];
 
-        // Must be an offensive zone event for the team in question
-        if (current.EventTeamId != teamId) return null;
+    // Must be an offensive zone event for the team in question
+    if (current.EventTeamId != teamId) return null;
 
-        // Check if previous event was in neutral zone
-        bool prevWasNeutral = prev.EventTeamId == teamId &&
-                               prev.Zone == "NZ";
+    // Use zone if available, otherwise infer from coordinates
+    string currentZone = current.Zone ?? CoordinateNormalizer.DetermineZoneFromX(current.XNorm);
+    string prevZone = prev.Zone ?? CoordinateNormalizer.DetermineZoneFromX(prev.XNorm);
 
-        // Check for coordinates crossing the blue line
-        bool crossedBlueLine = CoordinateNormalizer.CrossedOffensiveBlueLine(
-            prev.XNorm, current.XNorm, teamId, homeTeamId);
+    // Current must be OZ, previous must be NZ or non-OZ
+    if (currentZone != "OZ") return null;
+    if (prevZone == "OZ") return null; // already in OZ, not an entry
 
-        if (!crossedBlueLine && !prevWasNeutral) return null;
+    // Check if previous event was in neutral zone
+    bool prevWasNeutral = prev.EventTeamId == teamId && prevZone == "NZ";
 
-        // Classify the entry type
-        var classification = ClassifyEntry(events, currentIdx, twoBack, prev, current, teamId);
+    // Check for coordinates crossing the blue line
+    bool crossedBlueLine = CoordinateNormalizer.CrossedOffensiveBlueLine(
+        prev.XNorm, current.XNorm, teamId, homeTeamId);
 
-        if (classification == EntryClassification.None) return null;
+    if (!crossedBlueLine && !prevWasNeutral) return null;
 
-        return (classification, current.EventIdx, current.EventTeamId);
-    }
+    // Classify the entry type
+    var classification = ClassifyEntry(events, currentIdx, twoBack, prev, current, teamId);
+
+    if (classification == EntryClassification.None) return null;
+
+    return (classification, current.EventIdx, current.EventTeamId);
+}
 
     private static EntryClassification ClassifyEntry(
         List<ProcessedEvent> events, int currentIdx,

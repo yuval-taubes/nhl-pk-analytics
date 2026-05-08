@@ -72,47 +72,53 @@ public class DatabaseManager
     }
 
     public async Task BulkCopyTeamsAsync(List<Team> teams)
+{
+    if (teams.Count == 0) return;
+
+    await using var conn = CreateConnection();
+    await using var cmd = new NpgsqlCommand(
+        @"INSERT INTO teams (team_id, name, abbreviation) 
+          VALUES (@id, @name, @abbrev) 
+          ON CONFLICT (team_id) DO NOTHING", conn);
+    
+    cmd.Parameters.Add("@id", NpgsqlTypes.NpgsqlDbType.Integer);
+    cmd.Parameters.Add("@name", NpgsqlTypes.NpgsqlDbType.Varchar);
+    cmd.Parameters.Add("@abbrev", NpgsqlTypes.NpgsqlDbType.Varchar);
+    await cmd.PrepareAsync();
+
+    foreach (var team in teams.DistinctBy(t => t.TeamId))
     {
-        if (teams.Count == 0) return;
-
-        await using var conn = CreateConnection();
-        await using var writer = await conn.BeginBinaryImportAsync(
-            "COPY teams (team_id, name, abbreviation) FROM STDIN (FORMAT BINARY)");
-
-        foreach (var team in teams)
-        {
-            await writer.StartRowAsync();
-            await writer.WriteAsync(team.TeamId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(team.Name, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(team.Abbreviation, NpgsqlDbType.Varchar);
-        }
-
-        await writer.CompleteAsync();
-        _logger.LogDebug("Bulk copied {Count} teams.", teams.Count);
+        cmd.Parameters["@id"].Value = team.TeamId;
+        cmd.Parameters["@name"].Value = team.Name;
+        cmd.Parameters["@abbrev"].Value = team.Abbreviation;
+        await cmd.ExecuteNonQueryAsync();
     }
-
+}
     public async Task BulkCopyPlayersAsync(List<Player> players)
+{
+    if (players.Count == 0) return;
+
+    var distinct = players.DistinctBy(p => p.PlayerId).ToList();
+    
+    await using var conn = CreateConnection();
+    await using var cmd = new NpgsqlCommand(
+        @"INSERT INTO players (player_id, full_name, position) 
+          VALUES (@id, @name, @pos) 
+          ON CONFLICT (player_id) DO NOTHING", conn);
+    
+    cmd.Parameters.Add("@id", NpgsqlTypes.NpgsqlDbType.Integer);
+    cmd.Parameters.Add("@name", NpgsqlTypes.NpgsqlDbType.Varchar);
+    cmd.Parameters.Add("@pos", NpgsqlTypes.NpgsqlDbType.Varchar);
+    await cmd.PrepareAsync();
+
+    foreach (var player in distinct)
     {
-        if (players.Count == 0) return;
-
-        await using var conn = CreateConnection();
-        // Use INSERT ON CONFLICT for players since they appear across games
-        // Binary COPY for players is fine but need to handle duplicates
-        await using var writer = await conn.BeginBinaryImportAsync(
-            "COPY players (player_id, full_name, position) FROM STDIN (FORMAT BINARY)");
-
-        foreach (var player in players)
-        {
-            await writer.StartRowAsync();
-            await writer.WriteAsync(player.PlayerId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(player.FullName, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(player.Position, NpgsqlDbType.Varchar);
-        }
-
-        await writer.CompleteAsync();
-        _logger.LogDebug("Bulk copied {Count} players.", players.Count);
+        cmd.Parameters["@id"].Value = player.PlayerId;
+        cmd.Parameters["@name"].Value = player.FullName;
+        cmd.Parameters["@pos"].Value = player.Position;
+        await cmd.ExecuteNonQueryAsync();
     }
-
+}
     public async Task BulkCopyGamePlayersAsync(List<GamePlayer> gamePlayers)
     {
         if (gamePlayers.Count == 0) return;
@@ -196,21 +202,20 @@ public class DatabaseManager
             @"COPY shots (event_id, possession_id, shooter_id, x, y, x_norm, y_norm, shot_type, is_goal, xg) 
               FROM STDIN (FORMAT BINARY)");
 
-        foreach (var shot in shots)
-        {
-            await writer.StartRowAsync();
-            await writer.WriteAsync(shot.EventId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.PossessionId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.ShooterId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.X, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.Y, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.XNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.YNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.ShotType, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(shot.IsGoal, NpgsqlDbType.Boolean);
-            await writer.WriteAsync(shot.Xg, NpgsqlDbType.Numeric);
-        }
-
+foreach (var shot in shots)
+{
+    await writer.StartRowAsync();
+    await writer.WriteAsync(shot.EventId, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.PossessionId == 0 ? DBNull.Value : (object)shot.PossessionId, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.ShooterId == 0 ? DBNull.Value : (object)shot.ShooterId, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.X, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.Y, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.XNorm, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.YNorm, NpgsqlDbType.Integer);
+    await writer.WriteAsync(shot.ShotType, NpgsqlDbType.Varchar);
+    await writer.WriteAsync(shot.IsGoal, NpgsqlDbType.Boolean);
+    await writer.WriteAsync(shot.Xg, NpgsqlDbType.Numeric);
+}
         await writer.CompleteAsync();
         _logger.LogDebug("Bulk copied {Count} shots.", shots.Count);
     }
@@ -250,25 +255,31 @@ public class DatabaseManager
     }
 
     public async Task BulkCopyEventPlayersAsync(List<EventPlayer> eventPlayers)
+{
+    if (eventPlayers.Count == 0) return;
+
+    // Deduplicate by (event_id, player_id)
+   var distinct = eventPlayers
+       .GroupBy(ep => (ep.OriginalEventIdx, ep.PlayerId))
+       .Select(g => g.First())
+       .ToList();
+
+    await using var conn = CreateConnection();
+    await using var writer = await conn.BeginBinaryImportAsync(
+        "COPY event_players (event_id, player_id, team_id, is_home) FROM STDIN (FORMAT BINARY)");
+
+    foreach (var ep in distinct)
     {
-        if (eventPlayers.Count == 0) return;
-
-        await using var conn = CreateConnection();
-        await using var writer = await conn.BeginBinaryImportAsync(
-            "COPY event_players (event_id, player_id, team_id, is_home) FROM STDIN (FORMAT BINARY)");
-
-        foreach (var ep in eventPlayers)
-        {
-            await writer.StartRowAsync();
-            await writer.WriteAsync(ep.EventId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(ep.PlayerId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(ep.TeamId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(ep.IsHome, NpgsqlDbType.Boolean);
-        }
-
-        await writer.CompleteAsync();
-        _logger.LogDebug("Bulk copied {Count} event_players.", eventPlayers.Count);
+        await writer.StartRowAsync();
+        await writer.WriteAsync(ep.EventId, NpgsqlDbType.Integer);
+        await writer.WriteAsync(ep.PlayerId, NpgsqlDbType.Integer);
+        await writer.WriteAsync(ep.TeamId, NpgsqlDbType.Integer);
+        await writer.WriteAsync(ep.IsHome, NpgsqlDbType.Boolean);
     }
+
+    await writer.CompleteAsync();
+    _logger.LogDebug("Bulk copied {Count} event_players (deduped from {Original})", distinct.Count, eventPlayers.Count);
+}
 
     /// <summary>
     /// Upserts events to handle game re-processing (uses temp table + MERGE pattern).

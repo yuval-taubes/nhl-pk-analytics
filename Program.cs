@@ -9,7 +9,6 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        // Build configuration
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: false)
@@ -17,7 +16,6 @@ class Program
             .AddCommandLine(args)
             .Build();
 
-        // Setup DI
         var services = new ServiceCollection();
         ConfigureServices(services, configuration);
         var serviceProvider = services.BuildServiceProvider();
@@ -31,16 +29,14 @@ class Program
             var apiClient = serviceProvider.GetRequiredService<NhlApiClient>();
             var gameIngester = serviceProvider.GetRequiredService<GameIngester>();
 
-            // Initialize schema
             await dbManager.InitializeSchemaAsync();
 
-            // Get existing game IDs to skip
             var existingGameIds = await dbManager.GetExistingGameIdsAsync();
 
-            // Get seasons to process
+            // TEMP: Single season for testing
             var seasons = configuration.GetSection("Seasons").Get<string[]>() ?? Array.Empty<string>();
             logger.LogInformation("Processing {Count} seasons: {Seasons}", seasons.Length, string.Join(", ", seasons));
-
+            
             bool skipExisting = configuration.GetValue<bool>("Ingest:SkipExistingGames", true);
             int logEveryN = configuration.GetValue<int>("Ingest:LogEveryNGames", 10);
 
@@ -52,7 +48,6 @@ class Program
                 allGameIds.AddRange(gameIds.Select(id => (season, id)));
             }
 
-            // Filter out existing games
             var gamesToProcess = allGameIds
                 .Where(g => !skipExisting || !existingGameIds.Contains(g.gameId))
                 .ToList();
@@ -63,6 +58,7 @@ class Program
             int processed = 0;
             int succeeded = 0;
             int failed = 0;
+            int skipped = 0;
 
             foreach (var (season, gameId) in gamesToProcess)
             {
@@ -72,28 +68,32 @@ class Program
                 {
                     var success = await gameIngester.IngestGameAsync(gameId);
                     if (success)
+                    {
                         succeeded++;
+                    }
                     else
-                        failed++;
+                    {
+                        skipped++;
+                        logger.LogDebug("Game {GameId} skipped (no data available)", gameId);
+                    }
 
                     if (processed % logEveryN == 0)
                     {
-                        logger.LogInformation("Progress: {Processed}/{Total} games. {Succeeded} succeeded, {Failed} failed.",
-                            processed, gamesToProcess.Count, succeeded, failed);
+                        logger.LogInformation("Progress: {Processed}/{Total} games. {Succeeded} ok, {Skipped} skipped, {Failed} failed.",
+                            processed, gamesToProcess.Count, succeeded, skipped, failed);
                     }
                 }
                 catch (Exception ex)
                 {
                     failed++;
-                    logger.LogError(ex, "Failed to process game {GameId}", gameId);
+                    logger.LogError(ex, "Exception processing game {GameId}: {Message}", gameId, ex.Message);
                 }
 
-                // Rate limiting
                 await Task.Delay(configuration.GetValue<int>("NhlApi:DelayMs", 500));
             }
 
-            logger.LogInformation("Ingestion complete. Processed: {Processed}, Succeeded: {Succeeded}, Failed: {Failed}",
-                processed, succeeded, failed);
+            logger.LogInformation("Ingestion complete. Processed: {Processed}, Succeeded: {Succeeded}, Skipped: {Skipped}, Failed: {Failed}",
+                processed, succeeded, skipped, failed);
         }
         catch (Exception ex)
         {
@@ -107,13 +107,23 @@ class Program
         services.AddLogging(builder =>
         {
             builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Debug);  // Changed from Information to Debug
+            builder.SetMinimumLevel(LogLevel.Information);
             builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
         });
 
         services.AddSingleton(configuration);
-        services.AddHttpClient<NhlApiClient>();
-        services.AddSingleton<NhlApiClient>();
+
+        services.AddSingleton(sp =>
+        {
+            var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+            var config = sp.GetRequiredService<IConfiguration>();
+            var logger = sp.GetRequiredService<ILogger<NhlApiClient>>();
+            return new NhlApiClient(client, config, logger);
+        });
+
         services.AddSingleton(sp =>
         {
             var connString = configuration.GetConnectionString("DefaultConnection")

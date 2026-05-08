@@ -160,6 +160,19 @@ public class CoordinateNormalizer
             return "NZ";
         }
     }
+    
+        /// <summary>
+        /// Determines zone from normalized x coordinate only (home perspective).
+        /// No team context needed — just rink position.
+        /// </summary>
+    public static string DetermineZoneFromX(int? xNorm)
+    {
+        if (xNorm == null) return "NZ"; // default to neutral if no coordinate
+        
+        if (xNorm < HomeBlueLine) return "DZ";      // 0-75 = defensive zone (home end)
+        if (xNorm > AwayBlueLine) return "OZ";      // 125-200 = offensive zone (away end)
+        return "NZ";                                  // 75-125 = neutral zone
+    }
 
     /// <summary>
     /// Checks if the puck crossed into the offensive zone (for zone entry detection).

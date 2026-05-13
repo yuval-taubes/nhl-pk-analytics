@@ -28,20 +28,30 @@ public class PossessionTracker
         var possessions = new List<Possession>();
         Possession? currentPossession = null;
         int? previousTeamId = null;
+        ProcessedEvent? lastMatchingEvent = null;
 
         for (int i = 0; i < events.Count; i++)
         {
             var evt = events[i];
            
-            // Skip events not matching our PK strength filter
-            if (!string.IsNullOrEmpty(evt.Strength) &&
-                evt.Strength != strengthFilter &&
-                evt.Strength != "PK")
+            // Strength changes break the possession window for this filtered pass.
+            if (!MatchesStrength(evt, strengthFilter))
             {
-                // Still track team changes for possession context
-                previousTeamId = evt.EventTeamId;
+                if (currentPossession != null && lastMatchingEvent != null)
+                {
+                    currentPossession.EndType = "STRENGTH_CHANGE";
+                    currentPossession.EndEventId = lastMatchingEvent.EventId;
+                    currentPossession.EndEventOriginalIdx = lastMatchingEvent.OriginalEventIdx;
+                    FinalizePossession(currentPossession, events);
+                    possessions.Add(currentPossession);
+                    currentPossession = null;
+                }
+
+                previousTeamId = null;
                 continue;
             }
+
+            lastMatchingEvent = evt;
 
             // Handle faceoffs — always start a new possession
             if (evt.EventType?.Equals("faceoff", StringComparison.OrdinalIgnoreCase) == true)
@@ -79,7 +89,9 @@ public class PossessionTracker
             }
 
             // Check for zone entries
-            var entryResult = DetectZoneEntry(events, i, evt.EventTeamId ?? -1, homeTeamId);
+            var entryResult = i > 0 && MatchesStrength(events[i - 1], strengthFilter)
+                ? DetectZoneEntry(events, i, evt.EventTeamId ?? -1, homeTeamId)
+                : null;
 
             if (entryResult != null)
             {
@@ -188,10 +200,9 @@ public class PossessionTracker
                 bool possessionEnded = false;
                 string endReason = "";
 
-                // Clear: puck leaves offensive zone (controlled by possessing team)
-                if (evt.Zone != "OZ" && IsClearEvent(evt.EventType) && evt.EventTeamId == currentPossession.TeamId)
+                // Clear: detected by zone transition pattern (OZ → outside OZ, same team)
+                if (IsZoneExitClear(events, i, currentPossession.TeamId))
                 {
-                    _logger.LogDebug("Clear detected: type={Type}, zone={Zone}", evt.EventType, evt.Zone);
                     endReason = "CLEAR";
                     possessionEnded = true;
                 }
@@ -240,7 +251,8 @@ public class PossessionTracker
         if (currentPossession != null)
         {
             currentPossession.EndType = "STOPPAGE";
-            currentPossession.EndEventId = events.Last().EventId;
+            currentPossession.EndEventId = lastMatchingEvent?.EventId ?? currentPossession.EndEventId;
+            currentPossession.EndEventOriginalIdx = lastMatchingEvent?.OriginalEventIdx ?? currentPossession.EndEventOriginalIdx;
             FinalizePossession(currentPossession, events);
             possessions.Add(currentPossession);
             _logger.LogDebug("Closed possession (end of game): Team {TeamId}", currentPossession.TeamId);
@@ -310,6 +322,13 @@ public class PossessionTracker
     }
 
     // --- Event classification helpers ---
+
+    private static bool MatchesStrength(ProcessedEvent evt, string strengthFilter)
+    {
+        return string.IsNullOrEmpty(evt.Strength) ||
+               evt.Strength == strengthFilter ||
+               evt.Strength == "PK";
+    }
 
     private static bool IsShotEvent(string? eventType)
     {

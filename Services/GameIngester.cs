@@ -85,17 +85,18 @@ if (pbp.RosterSpots != null)
 
         try
         {
-            // Insert in dependency order
-            await _dbManager.BulkCopyTeamsAsync(teams.DistinctBy(t => t.TeamId).ToList());
-            await _dbManager.BulkCopyGamesAsync(new List<Game> { game });
-            await _dbManager.BulkCopyPlayersAsync(players.DistinctBy(p => p.PlayerId).ToList());
-            await _dbManager.BulkCopyGamePlayersAsync(gamePlayers);
+            // Insert reference data first, then clear and replace all game-scoped rows.
+            await _dbManager.UpsertTeamsAsync(conn, transaction, teams.DistinctBy(t => t.TeamId).ToList());
+            await _dbManager.UpsertPlayersAsync(conn, transaction, players.DistinctBy(p => p.PlayerId).ToList());
+            await _dbManager.DeleteGameDataAsync(conn, transaction, gameId);
+            await _dbManager.UpsertGamesAsync(conn, transaction, new List<Game> { game });
+            await _dbManager.UpsertGamePlayersAsync(conn, transaction, gamePlayers);
 
             // Events must be inserted before possessions (need event_ids)
-            await _dbManager.UpsertEventsForGameAsync(gameId, processedEvents.Select(e => e.ToEvent()).ToList());
+            await _dbManager.InsertEventsAsync(conn, processedEvents.Select(e => e.ToEvent()).ToList());
 
             // Now get the actual event IDs (SERIAL from DB)
-            var eventIds = await _dbManager.GetEventIdsBatchAsync(gameId, processedEvents.Count);
+            var eventIds = await _dbManager.GetEventIdsBatchAsync(conn, transaction, gameId, processedEvents.Count);
             for (int i = 0; i < processedEvents.Count; i++)
             {
                 processedEvents[i].EventId = eventIds[i];
@@ -116,7 +117,7 @@ if (pbp.RosterSpots != null)
                     poss.DurationSeconds = ComputeDuration(startPe, endPe);
             }
 
-            await _dbManager.BulkCopyPossessionsAsync(allPossessions);
+            await _dbManager.InsertPossessionsAsync(conn, transaction, allPossessions);
 
             // Update shot possession IDs and event IDs
             foreach (var shot in shots)
@@ -134,7 +135,7 @@ if (pbp.RosterSpots != null)
                 }
             }
 
-            await _dbManager.BulkCopyShotsAsync(shots);
+            await _dbManager.InsertShotsAsync(conn, shots);
 
             // Backfill event_id on eventPlayers
 foreach (var ep in eventPlayers)
@@ -143,7 +144,7 @@ foreach (var ep in eventPlayers)
     if (pe != null) ep.EventId = pe.EventId;
 }
 
-            await _dbManager.BulkCopyEventPlayersAsync(eventPlayers);
+            await _dbManager.InsertEventPlayersAsync(conn, eventPlayers);
 
             await transaction.CommitAsync();
             _logger.LogInformation("Game {GameId} ingested successfully: {EventCount} events, {ShotCount} shots, {PossessionCount} possessions",
@@ -315,8 +316,8 @@ if (eventType is "shot-on-goal" or "goal" or "missed-shot" or "blocked-shot")
         if (string.IsNullOrEmpty(situationCode) || situationCode.Length < 4)
             return (5, 5);
 
-        if (int.TryParse(situationCode.Substring(0, 2), out int away) &&
-            int.TryParse(situationCode.Substring(2, 2), out int home))
+        if (int.TryParse(situationCode.Substring(1, 1), out int away) &&
+            int.TryParse(situationCode.Substring(2, 1), out int home))
         {
             return (home, away);
         }

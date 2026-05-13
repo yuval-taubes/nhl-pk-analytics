@@ -1,11 +1,52 @@
+# Build output
 bin/
 obj/
+TestResults/
+
+# IDE/editor state
+.vs/
+.vscode/
+.idea/
 *.suo
 *.user
-.vs/
-__pycache__/
-*.pyc
-outputs/
-models/
-node_modules/
+*.userosscache
+*.sln.docstates
+
+# Local configuration and secrets
 .env
+.env.*
+*.local.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Enable after replacing the committed local config with appsettings.template.json:
+# appsettings.json
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Analytics output/artifacts
+runs/
+output/
+outputs/
+artifacts/
+*.joblib
+*.pkl
+*.pickle
+*.parquet
+
+# Frontend dependencies/build output
+node_modules/
+dist/
+build/
+
+# OS noise
+.DS_Store
+Thumbs.db

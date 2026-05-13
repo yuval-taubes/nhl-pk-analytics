@@ -1,80 +1,68 @@
-# nhl-pk-analytics
+# NHL PK Ingest
 
-Here's a README.md you can drop in your project root:
+.NET console ingestion pipeline for the NHL penalty-kill analytics project.
 
-```markdown
-# NHL Penalty Kill Analytics
+This app pulls NHL play-by-play data, normalizes events into a PostgreSQL schema, tracks penalty-kill possessions, links shots back to possessions, and prepares the database for the Python analytics layer.
 
-A full-stack analytics application for NHL penalty kill tactical analysis.
+## Project Status
 
-## Stack
+- PostgreSQL schema: implemented
+- NHL schedule and play-by-play ingestion: implemented
+- Coordinate normalization: implemented
+- PK possession tracking: implemented, with strength-change possession boundaries
+- Shot-to-possession linking: implemented
+- Analytics diagnostics: lives in the sibling `Analytics/` folder for now
 
-| Layer | Technology |
-|-------|-----------|
-| Database | PostgreSQL 17 |
-| Data Pipeline | .NET 8 Console App |
-| Analytics | Python (scikit-learn, DoWhy, statsmodels) |
-| API | ASP.NET Core Web API |
-| Frontend | React + TypeScript + Tailwind |
+## Local Setup
 
-## Setup
+Prerequisites:
 
-### Prerequisites
 - .NET 8 SDK
-- Python 3.11+
-- Node.js 20+
-- PostgreSQL 17
+- PostgreSQL
+- Python 3.10+ for the analytics project
 
-### Database
-```bash
-# Create database
-createdb nhl_pk_analytics
-```
+From this folder:
 
-### Data Pipeline
-```bash
-cd Data_ingestion/NhlPkIngest
-cp appsettings.template.json appsettings.json
-# Edit appsettings.json with your PostgreSQL connection string
+```powershell
+dotnet restore
+dotnet build
 dotnet run
 ```
 
-### Python Analytics
+The ingestion app reads database settings from `appsettings.json`. Use [appsettings.template.json](appsettings.template.json) as the safe starting point for local configuration.
+
+## Database
+
+The schema is maintained in [schema.sql](schema.sql). Re-running ingestion for an already-ingested game replaces that game's dependent rows so possession and shot-linking fixes can be applied by reprocessing games.
+
+## Important Notes
+
+The Git repository is currently rooted in this `NhlPkIngest/` folder, while the analytics code is one directory above it at `../Analytics/`. Git cannot track files outside its working tree, so `Analytics/` will not be included until the repository root is moved up to `Data_ingestion/` or the analytics folder is moved inside this repo.
+
+Recommended final layout:
+
+```text
+Data_ingestion/
+├── Analytics/
+├── NhlPkIngest/
+├── Data_ingestion.sln
+├── README.md
+└── .gitignore
+```
+
+## Diagnostics
+
+After ingestion, run the analytics diagnostics from the sibling `Analytics/` directory:
+
 ```bash
-cd analytics
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+cd "/d/Hockey-data project/Code/Data_ingestion/Analytics"
+./venv/Scripts/python.exe -m diagnostics.join_explosion
+./venv/Scripts/python.exe -m diagnostics.validate_coordinates
+./venv/Scripts/python.exe -m diagnostics.validate_possessions
 ```
 
-### API + Frontend
-```bash
-cd api
-dotnet run
+Current known diagnostic priorities:
 
-cd frontend
-npm install
-npm run dev
-```
-
-## Status
-
-- [x] PostgreSQL schema
-- [ ] Data pipeline (in progress - fixing schedule API parsing)
-- [ ] xG model
-- [ ] Causal analysis models (5 tactical models)
-- [ ] Web API
-- [ ] Frontend dashboard
-
-## Data Sources
-
-NHL API endpoints:
-- Play-by-play: `https://api.nhle.com/stats/rest/en/game/{gameId}/play-by-play`
-- Schedule: `https://api-web.nhle.com/v1/schedule/{date}`
-
-Seasons: 2022-23, 2023-24, 2024-25
-```
-
----
-
-Just change `YOUR_USERNAME` in the git remote command to your actual GitHub username, and push.
+- Forward forechecking player-level joins need deduping before modeling.
+- Defenseman gap-control joins should use a deduped event-level base.
+- Possession validation should be rerun after re-ingesting with the latest strength-change boundary fix.

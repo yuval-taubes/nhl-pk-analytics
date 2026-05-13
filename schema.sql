@@ -126,3 +126,65 @@ CREATE INDEX IF NOT EXISTS idx_events_strength ON events(strength) WHERE strengt
 CREATE INDEX IF NOT EXISTS idx_possessions_game_team ON possessions(game_id, team_id);
 CREATE INDEX IF NOT EXISTS idx_possessions_entry ON possessions(entry_type) WHERE entry_type IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_shots_possession ON shots(possession_id);
+
+-- Make re-ingestion idempotent for existing databases too. CREATE TABLE IF NOT EXISTS
+-- will not update old FK definitions, so replace the relevant constraints explicitly.
+ALTER TABLE game_players DROP CONSTRAINT IF EXISTS game_players_game_id_fkey;
+ALTER TABLE game_players ADD CONSTRAINT game_players_game_id_fkey
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE;
+
+ALTER TABLE game_players DROP CONSTRAINT IF EXISTS game_players_player_id_fkey;
+ALTER TABLE game_players ADD CONSTRAINT game_players_player_id_fkey
+    FOREIGN KEY (player_id) REFERENCES players(player_id);
+
+ALTER TABLE game_players DROP CONSTRAINT IF EXISTS game_players_team_id_fkey;
+ALTER TABLE game_players ADD CONSTRAINT game_players_team_id_fkey
+    FOREIGN KEY (team_id) REFERENCES teams(team_id);
+
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_game_id_fkey;
+ALTER TABLE events ADD CONSTRAINT events_game_id_fkey
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE;
+
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_event_team_id_fkey;
+ALTER TABLE events ADD CONSTRAINT events_event_team_id_fkey
+    FOREIGN KEY (event_team_id) REFERENCES teams(team_id);
+
+ALTER TABLE possessions DROP CONSTRAINT IF EXISTS possessions_game_id_fkey;
+ALTER TABLE possessions ADD CONSTRAINT possessions_game_id_fkey
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE;
+
+ALTER TABLE possessions DROP CONSTRAINT IF EXISTS possessions_team_id_fkey;
+ALTER TABLE possessions ADD CONSTRAINT possessions_team_id_fkey
+    FOREIGN KEY (team_id) REFERENCES teams(team_id);
+
+ALTER TABLE possessions DROP CONSTRAINT IF EXISTS possessions_start_event_id_fkey;
+ALTER TABLE possessions ADD CONSTRAINT possessions_start_event_id_fkey
+    FOREIGN KEY (start_event_id) REFERENCES events(event_id) ON DELETE CASCADE;
+
+ALTER TABLE possessions DROP CONSTRAINT IF EXISTS possessions_end_event_id_fkey;
+ALTER TABLE possessions ADD CONSTRAINT possessions_end_event_id_fkey
+    FOREIGN KEY (end_event_id) REFERENCES events(event_id) ON DELETE CASCADE;
+
+ALTER TABLE shots DROP CONSTRAINT IF EXISTS shots_event_id_fkey;
+ALTER TABLE shots ADD CONSTRAINT shots_event_id_fkey
+    FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE;
+
+ALTER TABLE shots DROP CONSTRAINT IF EXISTS shots_possession_id_fkey;
+ALTER TABLE shots ADD CONSTRAINT shots_possession_id_fkey
+    FOREIGN KEY (possession_id) REFERENCES possessions(possession_id) ON DELETE SET NULL;
+
+ALTER TABLE shots DROP CONSTRAINT IF EXISTS shots_shooter_id_fkey;
+ALTER TABLE shots ADD CONSTRAINT shots_shooter_id_fkey
+    FOREIGN KEY (shooter_id) REFERENCES players(player_id);
+
+ALTER TABLE event_players DROP CONSTRAINT IF EXISTS event_players_event_id_fkey;
+ALTER TABLE event_players ADD CONSTRAINT event_players_event_id_fkey
+    FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE;
+
+ALTER TABLE event_players DROP CONSTRAINT IF EXISTS event_players_player_id_fkey;
+ALTER TABLE event_players ADD CONSTRAINT event_players_player_id_fkey
+    FOREIGN KEY (player_id) REFERENCES players(player_id);
+
+ALTER TABLE event_players DROP CONSTRAINT IF EXISTS event_players_team_id_fkey;
+ALTER TABLE event_players ADD CONSTRAINT event_players_team_id_fkey
+    FOREIGN KEY (team_id) REFERENCES teams(team_id);

@@ -29,7 +29,7 @@ dotnet build
 dotnet run
 ```
 
-The ingestion app reads database settings from `appsettings.json`. Use [appsettings.template.json](appsettings.template.json) as the safe starting point for local configuration.
+The ingestion app reads database settings from `appsettings.json`. Use [appsettings.template.json](appsettings.template.json) as the safe starting point for local configuration. The real `appsettings.json` should stay local and untracked.
 
 ## Database
 

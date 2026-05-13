@@ -1,0 +1,50 @@
+"""
+Configuration for NHL PK Analytics Pipeline.
+"""
+
+# Database connection
+DB_CONFIG = {
+    'host': 'localhost',
+    'database': 'nhl_pk_analytics',
+    'user': 'postgres',
+    'password': 'superuser',
+    'port': 5432
+}
+
+# Rink dimensions (NHL standard)
+RINK_LENGTH_FT = 200
+RINK_WIDTH_FT = 85
+
+# Validation thresholds
+class Thresholds:
+    # Sample size minimums
+    MIN_POSSESSIONS_FOR_ATT = 100
+    MIN_GAMES_FOR_BOOTSTRAP = 30
+    MIN_POSSESSION_SAMPLE = 50
+    
+    # Join inflation
+    MAX_JOIN_INFLATION = 3.0
+    
+    # Coordinate validation
+    X_MIN = 0
+    X_MAX = 200
+    Y_MIN = 0
+    Y_MAX = 85
+    
+    # Possession quality
+    MAX_POSSESSION_ISSUE_RATE = 0.20
+    
+    # Propensity score overlap
+    MIN_OVERLAP_PROPORTION = 0.50
+    
+    # xG model validation
+    MIN_XG_AUC = 0.70
+    MAX_CALIBRATION_ERROR = 0.10
+    
+    # Bootstrap
+    N_BOOTSTRAP = 500
+    BOOTSTRAP_CI = 95
+
+# Paths
+MODEL_PATH = 'models/trained/xg_model.joblib'
+RUNS_DIR = 'runs'

@@ -1,0 +1,10 @@
+psycopg2-binary
+pandas
+numpy
+scikit-learn
+joblib
+scipy
+dowhy
+statsmodels
+matplotlib
+seaborn

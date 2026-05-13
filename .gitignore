@@ -1,6 +1,6 @@
-# Build output
-bin/
-obj/
+# .NET
+**/bin/
+**/obj/
 TestResults/
 
 # IDE/editor state
@@ -16,16 +16,18 @@ TestResults/
 .env
 .env.*
 *.local.json
-appsettings.Development.json
-appsettings.Local.json
-
-appsettings.json
-!appsettings.template.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.json
+!**/appsettings.template.json
 
 # Python environments and caches
 .venv/
+**/.venv/
 venv/
+**/venv/
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
@@ -33,17 +35,18 @@ __pycache__/
 .ruff_cache/
 
 # Analytics output/artifacts
-runs/
-output/
-outputs/
-artifacts/
-*.joblib
-*.pkl
-*.pickle
-*.parquet
+Analytics/runs/
+Analytics/output/
+Analytics/outputs/
+Analytics/artifacts/
+**/*.joblib
+**/*.pkl
+**/*.pickle
+**/*.parquet
 
 # Frontend dependencies/build output
 node_modules/
+**/node_modules/
 dist/
 build/
 

@@ -2,10 +2,11 @@
 
 An analytics project for studying NHL penalty-kill performance from play-by-play data.
 
-The project currently has two main pieces:
+The project currently has three main pieces:
 
 - `NhlPkIngest`: a .NET 8 console app that ingests NHL play-by-play data into PostgreSQL.
 - `Analytics`: a Python analytics layer for data validation, xG modeling, and tactical penalty-kill model experiments.
+- `Frontend`: a React + TypeScript + Bootstrap analyst workstation shell.
 
 The goal is to build toward a full penalty-kill decision-support system: clean event data, reliable possession tracking, shot quality modeling, and eventually tactical breakdown analysis for entries, clears, pressure, net-front defense, and goals against.
 
@@ -14,6 +15,7 @@ The goal is to build toward a full penalty-kill decision-support system: clean e
 ```text
 Data_ingestion/
 |-- Analytics/              Python diagnostics and modeling
+|-- Frontend/               React/TypeScript dashboard shell
 |-- NhlPkIngest/            .NET ingestion console app
 |-- Data_ingestion.sln      Visual Studio solution
 |-- README.md               Project overview
@@ -51,14 +53,17 @@ NHL API
   -> PostgreSQL schema
   -> Analytics diagnostics
   -> xG / tactical models
+  -> ASP.NET API (planned)
+  -> Frontend dashboard
 ```
 
-The ingestion app owns database population. The Python layer assumes PostgreSQL is already populated and focuses on diagnostics, modeling, and research workflows.
+The ingestion app owns database population. The Python layer assumes PostgreSQL is already populated and focuses on diagnostics, modeling, and research workflows. The frontend is currently a Bootstrap-based React shell with mock data while the API layer is designed.
 
 ## Prerequisites
 
 - .NET 8 SDK
 - Python 3.10+
+- Node.js 20+ for the frontend
 - PostgreSQL
 - Git Bash or PowerShell on Windows
 
@@ -187,6 +192,19 @@ Full analytics pipeline:
 ```
 
 Generated reports and model artifacts are written to ignored local output folders such as `Analytics/runs/` and `Analytics/models/trained/`.
+
+## Frontend Commands
+
+Run these from `Frontend/`.
+
+```powershell
+npm install
+npm run dev
+npm run build
+npm run lint
+```
+
+The frontend is React + TypeScript + Bootstrap. It currently uses mock dashboard data and expects the future API at `http://localhost:5080/api` unless `VITE_API_BASE_URL` is set.
 
 ## Diagnostics Notes
 

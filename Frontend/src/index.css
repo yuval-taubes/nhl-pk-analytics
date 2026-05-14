@@ -1,0 +1,197 @@
+:root {
+  color-scheme: dark;
+  --pk-bg: #080d13;
+  --pk-panel: #101821;
+  --pk-panel-2: #151f2b;
+  --pk-border: #263546;
+  --pk-text: #e7eef7;
+  --pk-muted: #91a2b5;
+  --pk-blue: #66d9ff;
+  --pk-red: #ff5d6c;
+  --pk-green: #39d98a;
+  --pk-amber: #ffc857;
+  --pk-ice: #d9f7ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(102, 217, 255, 0.13), transparent 28rem),
+    linear-gradient(180deg, #0a111a 0%, var(--pk-bg) 36rem);
+  color: var(--pk-text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 270px;
+  background: rgba(8, 13, 19, 0.92);
+  border-right: 1px solid var(--pk-border);
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(102, 217, 255, 0.55);
+  border-radius: 8px;
+  color: var(--pk-blue);
+}
+
+.nav-button {
+  color: var(--pk-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.nav-button:hover,
+.nav-button.active {
+  color: var(--pk-text);
+  background: rgba(102, 217, 255, 0.08);
+  border-color: rgba(102, 217, 255, 0.2);
+}
+
+.topbar {
+  background: rgba(12, 19, 27, 0.84);
+  border-bottom: 1px solid var(--pk-border);
+  backdrop-filter: blur(10px);
+}
+
+.work-area {
+  min-width: 0;
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(21, 31, 43, 0.96), rgba(14, 22, 31, 0.96));
+  border: 1px solid var(--pk-border);
+  border-radius: 8px;
+}
+
+.metric-panel {
+  min-height: 118px;
+}
+
+.metric-value {
+  font-size: clamp(1.5rem, 2.4vw, 2.2rem);
+  line-height: 1;
+}
+
+.label-muted {
+  color: var(--pk-muted);
+}
+
+.trend-up {
+  color: var(--pk-red);
+}
+
+.trend-down {
+  color: var(--pk-green);
+}
+
+.rink {
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid rgba(217, 247, 255, 0.25);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 24.5%, rgba(102, 217, 255, 0.55) 24.6%, rgba(102, 217, 255, 0.55) 25.4%, transparent 25.5%),
+    linear-gradient(90deg, transparent 74.5%, rgba(102, 217, 255, 0.55) 74.6%, rgba(102, 217, 255, 0.55) 75.4%, transparent 75.5%),
+    linear-gradient(90deg, transparent 49.7%, rgba(255, 93, 108, 0.5) 49.8%, rgba(255, 93, 108, 0.5) 50.2%, transparent 50.3%),
+    rgba(217, 247, 255, 0.045);
+  position: relative;
+  overflow: hidden;
+}
+
+.rink::before,
+.rink::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 82px;
+  height: 82px;
+  border: 1px solid rgba(255, 93, 108, 0.55);
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+
+.rink::before {
+  left: 8%;
+}
+
+.rink::after {
+  right: 8%;
+}
+
+.shot-dot {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+  background: var(--pk-red);
+  box-shadow: 0 0 18px rgba(255, 93, 108, 0.58);
+  position: absolute;
+}
+
+.sequence-flow {
+  height: 360px;
+}
+
+.react-flow__node {
+  border-radius: 8px;
+  border: 1px solid rgba(102, 217, 255, 0.35);
+  background: #101821;
+  color: var(--pk-text);
+  font-size: 12px;
+  min-width: 120px;
+}
+
+.table-dark {
+  --bs-table-bg: transparent;
+  --bs-table-border-color: var(--pk-border);
+  --bs-table-color: var(--pk-text);
+}
+
+.form-select,
+.form-control {
+  background-color: #0d151e;
+  border-color: var(--pk-border);
+  color: var(--pk-text);
+}
+
+.form-select:focus,
+.form-control:focus {
+  background-color: #0d151e;
+  color: var(--pk-text);
+  border-color: var(--pk-blue);
+  box-shadow: 0 0 0 0.2rem rgba(102, 217, 255, 0.12);
+}
+
+.badge-soft {
+  border: 1px solid rgba(102, 217, 255, 0.22);
+  color: var(--pk-blue);
+  background: rgba(102, 217, 255, 0.08);
+}
+
+@media (max-width: 991.98px) {
+  .sidebar {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--pk-border);
+  }
+}

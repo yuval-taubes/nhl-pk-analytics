@@ -22,7 +22,6 @@ public class PossessionTracker
         List<ProcessedEvent> events,
         int gameId,
         int homeTeamId,
-    
         string strengthFilter)
     {
         var possessions = new List<Possession>();
@@ -33,7 +32,7 @@ public class PossessionTracker
         for (int i = 0; i < events.Count; i++)
         {
             var evt = events[i];
-           
+
             // Strength changes break the possession window for this filtered pass.
             if (!MatchesStrength(evt, strengthFilter))
             {
@@ -53,14 +52,14 @@ public class PossessionTracker
 
             lastMatchingEvent = evt;
 
-            // Handle faceoffs — always start a new possession
+            // Handle faceoffs - always start a new possession
             if (evt.EventType?.Equals("faceoff", StringComparison.OrdinalIgnoreCase) == true)
             {
                 // Close current possession if one exists
                 if (currentPossession != null)
                 {
                     currentPossession.EndEventId = evt.EventId;
-                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx; 
+                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx;
                     currentPossession.EndType = "STOPPAGE";
                     FinalizePossession(currentPossession, events);
                     possessions.Add(currentPossession);
@@ -71,8 +70,8 @@ public class PossessionTracker
                 // Start new possession for the team that won the faceoff (only if in OZ)
                 if (evt.Zone == "OZ" && evt.EventTeamId != null)
                 {
-                        _logger.LogDebug("OZ faceoff detected for team {TeamId} at event {Idx}, strength={Str}",
-        evt.EventTeamId, evt.OriginalEventIdx, evt.Strength);
+                    _logger.LogDebug("OZ faceoff detected for team {TeamId} at event {Idx}, strength={Str}",
+                        evt.EventTeamId, evt.OriginalEventIdx, evt.Strength);
 
                     currentPossession = CreatePossession(gameId, evt, strengthFilter,
                         "FACEOFF_START");
@@ -95,11 +94,11 @@ public class PossessionTracker
 
             if (entryResult != null)
             {
-                    _logger.LogDebug("Zone entry detected: type {Type} for team {TeamId} at event {Idx}, strength={Str}",
-        entryResult.Value.classification, evt.EventTeamId, evt.OriginalEventIdx, evt.Strength);
+                _logger.LogDebug("Zone entry detected: type {Type} for team {TeamId} at event {Idx}, strength={Str}",
+                    entryResult.Value.classification, evt.EventTeamId, evt.OriginalEventIdx, evt.Strength);
                 var (classification, _, _) = entryResult.Value;
 
-                // If same team already has possession, this is a re-entry — update entry info
+                // If same team already has possession, this is a re-entry - update entry info
                 if (currentPossession != null && currentPossession.TeamId == evt.EventTeamId)
                 {
                     currentPossession.EntryType = classification switch
@@ -115,11 +114,11 @@ public class PossessionTracker
                 }
                 else
                 {
-                    // New zone entry — close old possession, start new one
+                    // New zone entry - close old possession, start new one
                     if (currentPossession != null)
                     {
                         currentPossession.EndEventId = evt.EventId;
-                        currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx; 
+                        currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx;
                         currentPossession.EndType = "CLEAR";
                         FinalizePossession(currentPossession, events);
                         possessions.Add(currentPossession);
@@ -147,14 +146,14 @@ public class PossessionTracker
                 continue;
             }
 
-            // Handle turnover in OZ — starts a new possession for the other team
+            // Handle turnover in OZ - starts a new possession for the other team
             if (evt.Zone == "OZ" && IsTakeaway(evt.EventType) &&
                 currentPossession?.TeamId != evt.EventTeamId && evt.EventTeamId != null)
             {
                 if (currentPossession != null)
                 {
                     currentPossession.EndEventId = evt.EventId;
-                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx; 
+                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx;
                     currentPossession.EndType = "TURNOVER";
                     FinalizePossession(currentPossession, events);
                     possessions.Add(currentPossession);
@@ -183,7 +182,7 @@ public class PossessionTracker
                         currentPossession.GoalCount++;
                         currentPossession.EndType = "GOAL";
                         currentPossession.EndEventId = evt.EventId;
-                        currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx; 
+                        currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx;
                         FinalizePossession(currentPossession, events);
                         possessions.Add(currentPossession);
                         _logger.LogDebug("Closed possession (goal): Team {TeamId}, Events {Start}-{End}",
@@ -200,8 +199,8 @@ public class PossessionTracker
                 bool possessionEnded = false;
                 string endReason = "";
 
-                // Clear: detected by zone transition pattern (OZ → outside OZ, same team)
-                if (IsZoneExitClear(events, i, currentPossession.TeamId))
+                // Clear: detected by zone transition pattern (OZ to outside OZ, same team)
+                if (IsZoneExitClear(events, i, currentPossession.TeamId, homeTeamId))
                 {
                     endReason = "CLEAR";
                     possessionEnded = true;
@@ -216,14 +215,14 @@ public class PossessionTracker
 
                 // Change of possession in OZ
                 if (!possessionEnded &&
-                    IsChangeOfPossession(evt.EventType, evt.EventTeamId, previousTeamId) &&
+                    IsChangeOfPossession(evt.EventType ?? "", evt.EventTeamId, previousTeamId) &&
                     evt.Zone == "OZ")
                 {
                     endReason = "TURNOVER";
                     possessionEnded = true;
                 }
 
-                // Penalty drawn — ends possession
+                // Penalty drawn - ends possession
                 if (!possessionEnded &&
                     evt.EventType?.Equals("penalty", StringComparison.OrdinalIgnoreCase) == true)
                 {
@@ -235,7 +234,7 @@ public class PossessionTracker
                 {
                     currentPossession.EndType = endReason;
                     currentPossession.EndEventId = evt.EventId;
-                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx; 
+                    currentPossession.EndEventOriginalIdx = evt.OriginalEventIdx;
                     FinalizePossession(currentPossession, events);
                     possessions.Add(currentPossession);
                     _logger.LogDebug("Closed possession ({Reason}): Team {TeamId}, Events {Start}-{End}",
@@ -277,7 +276,7 @@ public class PossessionTracker
             GameId = gameId,
             TeamId = startEvent.EventTeamId!.Value,
             StartEventId = startEvent.EventId,
-            StartEventOriginalIdx = startEvent.OriginalEventIdx,  
+            StartEventOriginalIdx = startEvent.OriginalEventIdx,
             EndEventId = startEvent.EventId,
             EndEventOriginalIdx = startEvent.OriginalEventIdx,
             Strength = strength,
@@ -313,7 +312,7 @@ public class PossessionTracker
                     endEvent.PeriodTimeSeconds - startEvent.PeriodTimeSeconds;
             }
 
-            // Sanity check — cap at reasonable max (5 min for a single possession)
+            // Sanity check - cap at reasonable max (5 min for a single possession)
             if (possession.DurationSeconds > 300)
                 possession.DurationSeconds = 300;
             if (possession.DurationSeconds < 0)
@@ -325,9 +324,10 @@ public class PossessionTracker
 
     private static bool MatchesStrength(ProcessedEvent evt, string strengthFilter)
     {
-        return string.IsNullOrEmpty(evt.Strength) ||
-               evt.Strength == strengthFilter ||
-               evt.Strength == "PK";
+        if (evt.Strength == strengthFilter || evt.Strength == "PK")
+            return true;
+
+        return string.IsNullOrEmpty(evt.Strength) && IsStoppage(evt.EventType);
     }
 
     private static bool IsShotEvent(string? eventType)
@@ -344,55 +344,65 @@ public class PossessionTracker
             _ => false
         };
     }
+
     /// <summary>
-/// Detects a clear by checking if the puck moved from OZ to outside OZ 
-/// while the same team maintained possession. Event-type agnostic.
-/// </summary>
-private static bool IsZoneExitClear(List<ProcessedEvent> events, int currentIdx, int teamId)
-{
-    if (currentIdx < 1) return false;
-    
-    var current = events[currentIdx];
-    var prev = events[currentIdx - 1];
-    
-    // Don't count shots from outside the OZ as clears
-    if (current.EventType is "shot-on-goal" or "missed-shot" or "blocked-shot")
-        return false;
-    
-    // Zone label check: previous was OZ, current is outside OZ
-    if (prev.Zone == "OZ" && prev.EventTeamId == teamId &&
-        current.Zone != "OZ" && current.Zone != "")
+    /// Detects a clear by checking if the puck moved from OZ to outside OZ
+    /// while the same team maintained possession. Event-type agnostic.
+    /// </summary>
+    private static bool IsZoneExitClear(List<ProcessedEvent> events, int currentIdx, int teamId, int homeTeamId)
     {
-        return true;
-    }
-    
-    // Coordinate fallback: puck crossed blue line outward
-    if (prev.XNorm != null && current.XNorm != null && prev.EventTeamId == teamId)
-    {
-        bool prevInOZ = prev.XNorm > CoordinateNormalizer.AwayBlueLine;
-        bool currOutsideOZ = current.XNorm <= CoordinateNormalizer.AwayBlueLine;
-        
-        if (prevInOZ && currOutsideOZ)
+        if (currentIdx < 1) return false;
+
+        var current = events[currentIdx];
+        var prev = events[currentIdx - 1];
+
+        // Do not count shots from outside the OZ as clears.
+        if (current.EventType is "shot-on-goal" or "missed-shot" or "blocked-shot")
+            return false;
+
+        // Zone labels are relative to the event team, so use them only when the same
+        // team owns both events. Otherwise, fall back to absolute rink coordinates.
+        if (prev.EventTeamId == teamId &&
+            current.EventTeamId == teamId &&
+            prev.Zone == "OZ" &&
+            current.Zone != "OZ" &&
+            !string.IsNullOrEmpty(current.Zone))
+        {
             return true;
+        }
+
+        // Coordinate fallback: puck crossed the attacking blue line outward.
+        if (prev.XNorm != null && current.XNorm != null && prev.EventTeamId == teamId)
+        {
+            bool isHomeTeam = teamId == homeTeamId;
+            bool prevInOZ = isHomeTeam
+                ? prev.XNorm >= CoordinateNormalizer.AwayBlueLine
+                : prev.XNorm <= CoordinateNormalizer.HomeBlueLine;
+            bool currOutsideOZ = isHomeTeam
+                ? current.XNorm < CoordinateNormalizer.AwayBlueLine
+                : current.XNorm > CoordinateNormalizer.HomeBlueLine;
+
+            if (prevInOZ && currOutsideOZ)
+                return true;
+        }
+
+        return false;
     }
-    
-    return false;
-}
     private static bool IsClearEvent(string? eventType)
     {
         if (string.IsNullOrEmpty(eventType)) return false;
         return eventType switch
         {
             "clear" => true,
-            "cleared" => true,           // ADD
+            "cleared" => true,
             "dump-out" => true,
             "puck-out-of-bounds" => true,
-            "puck-out-of-play" => true,  // ADD
+            "puck-out-of-play" => true,
             "icing" => true,
             "offside" => true,
-            "puck-in-crowd" => true,     // ADD
-            "puck-in-netting" => true,   // ADD
-            "puck-in-benches" => true,   // ADD
+            "puck-in-crowd" => true,
+            "puck-in-netting" => true,
+            "puck-in-benches" => true,
             _ => false
         };
     }

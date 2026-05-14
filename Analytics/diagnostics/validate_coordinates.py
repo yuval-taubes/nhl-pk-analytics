@@ -41,7 +41,7 @@ def validate_coordinates(db):
         logger.error("These will corrupt all distance/angle calculations")
         critical_issues = True
     else:
-        logger.info(f"✓ All {total:,} shots within rink bounds [0,200] x [0,85]")
+        logger.info(f"All {total:,} shots within rink bounds [0,200] x [0,85]")
     
     # Check 2: Behind-net locations
     behind = db.query_to_df("""
@@ -58,17 +58,33 @@ def validate_coordinates(db):
     elif checks['behind_net'] > 0:
         logger.warning(f"{checks['behind_net']} shots behind net - investigate")
     else:
-        logger.info("✓ No impossible behind-net shot locations")
+        logger.info("No impossible behind-net shot locations")
     
     # Check 3: Distance distribution
     logger.info("Checking distance distributions...")
     dist = db.query_to_df("""
-        SELECT 
-            AVG(SQRT(POWER(x_norm - 11, 2) + POWER(y_norm - 42.5, 2))) as avg_ft,
-            MIN(SQRT(POWER(x_norm - 11, 2) + POWER(y_norm - 42.5, 2))) as min_ft,
-            MAX(SQRT(POWER(x_norm - 11, 2) + POWER(y_norm - 42.5, 2))) as max_ft
-        FROM shots
-        WHERE x_norm IS NOT NULL AND y_norm IS NOT NULL
+        WITH shot_net AS (
+            SELECT
+                s.x_norm,
+                s.y_norm,
+                CASE
+                    WHEN e.event_team_id = g.home_team_id THEN 189
+                    WHEN e.event_team_id = g.away_team_id THEN 11
+                    ELSE NULL
+                END AS target_net_x
+            FROM shots s
+            JOIN events e ON s.event_id = e.event_id
+            JOIN games g ON e.game_id = g.game_id
+            WHERE s.x_norm IS NOT NULL
+              AND s.y_norm IS NOT NULL
+              AND e.event_team_id IS NOT NULL
+        )
+        SELECT
+            AVG(SQRT(POWER(x_norm - target_net_x, 2) + POWER(y_norm - 42.5, 2))) as avg_ft,
+            MIN(SQRT(POWER(x_norm - target_net_x, 2) + POWER(y_norm - 42.5, 2))) as min_ft,
+            MAX(SQRT(POWER(x_norm - target_net_x, 2) + POWER(y_norm - 42.5, 2))) as max_ft
+        FROM shot_net
+        WHERE target_net_x IS NOT NULL
     """)
     checks['distance'] = dist.to_dict('records')[0]
     
@@ -126,13 +142,13 @@ def validate_coordinates(db):
         for _, row in clusters.iterrows():
             logger.warning(f"  ({row['x_bin']:.0f}, {row['y_bin']:.0f}): {row['count']:,} shots")
     else:
-        logger.info("✓ No suspicious coordinate clustering detected")
+        logger.info("No suspicious coordinate clustering detected")
     
     # Summary
     if critical_issues:
-        logger.error("\n❌ COORDINATE VALIDATION FAILED")
+        logger.error("\nCOORDINATE VALIDATION FAILED")
     else:
-        logger.info("\n✓ Coordinate validation passed")
+        logger.info("\nCoordinate validation passed")
     
     return checks, not critical_issues
 

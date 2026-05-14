@@ -56,7 +56,7 @@ def main():
             else:
                 logger.info(f"  {label}: {ratio:.1f}x - ok")
         
-        logger.info("✓ GATE 1 PASSED")
+        logger.info("GATE 1 PASSED")
         
         # ================================================================
         # GATE 2: Coordinate validation
@@ -70,7 +70,7 @@ def main():
         if not coord_passed:
             raise ValueError("Coordinate validation failed - check log for details")
         
-        logger.info("✓ GATE 2 PASSED")
+        logger.info("GATE 2 PASSED")
         
         # ================================================================
         # GATE 3: Possession quality
@@ -87,7 +87,7 @@ def main():
                 f"(threshold: {Thresholds.MAX_POSSESSION_ISSUE_RATE:.1%})"
             )
         
-        logger.info(f"✓ GATE 3 PASSED (issue rate: {issue_rate:.1%})")
+        logger.info(f"GATE 3 PASSED (issue rate: {issue_rate:.1%})")
         
         # ================================================================
         # GATE 4: xG Model training and backfill
@@ -119,7 +119,7 @@ def main():
             logger.error(f"xG AUC {auc:.4f} below threshold {Thresholds.MIN_XG_AUC}")
             raise ValueError("xG model quality insufficient")
         
-        logger.info("✓ GATE 4 PASSED")
+        logger.info("GATE 4 PASSED")
         
         # ================================================================
         # ALL GATES PASSED - Run Model 1
@@ -153,7 +153,7 @@ def main():
         return results
         
     except Exception as e:
-        logger.error(f"\n❌ PIPELINE FAILED: {e}")
+        logger.error(f"\nPIPELINE FAILED: {e}")
         sys.exit(1)
     
     finally:

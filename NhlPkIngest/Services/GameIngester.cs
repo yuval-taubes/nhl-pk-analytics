@@ -58,17 +58,21 @@ public class GameIngester
         var players = new List<Player>();
         var gamePlayers = new List<GamePlayer>();
 
-if (pbp.RosterSpots != null)
-{
-    foreach (var p in pbp.RosterSpots)
-    {
-        players.Add(new Player { PlayerId = p.PlayerId, FullName = p.FullName, Position = p.PositionCode ?? "NA" });
-        gamePlayers.Add(new GamePlayer { GameId = gameId, PlayerId = p.PlayerId, TeamId = p.TeamId });
-    }
-}
+        if (pbp.RosterSpots != null)
+        {
+            foreach (var p in pbp.RosterSpots)
+            {
+                players.Add(new Player { PlayerId = p.PlayerId, FullName = p.FullName, Position = p.PositionCode ?? "NA" });
+                gamePlayers.Add(new GamePlayer { GameId = gameId, PlayerId = p.PlayerId, TeamId = p.TeamId });
+            }
+        }
+        var playerTeamLookup = gamePlayers
+            .GroupBy(p => p.PlayerId)
+            .ToDictionary(gp => gp.Key, gp => gp.First().TeamId);
+
         // 4. Process events
         var (processedEvents, shots, eventPlayers) = ProcessEvents(
-            pbp.Plays!, gameId, homeTeamId, awayTeamId);
+            pbp.Plays!, gameId, homeTeamId, awayTeamId, playerTeamLookup);
 
         // 5. Derive possessions for PK strengths
         var allPossessions = new List<Possession>();
@@ -107,12 +111,12 @@ if (pbp.RosterSpots != null)
             {
                 var startPe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == poss.StartEventOriginalIdx);
                 var endPe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == poss.EndEventOriginalIdx);
-                
+
                 if (startPe != null)
                     poss.StartEventId = startPe.EventId;
                 if (endPe != null)
                     poss.EndEventId = endPe.EventId;
-                
+
                 if (startPe != null && endPe != null)
                     poss.DurationSeconds = ComputeDuration(startPe, endPe);
             }
@@ -122,8 +126,8 @@ if (pbp.RosterSpots != null)
             // Update shot possession IDs and event IDs
             foreach (var shot in shots)
             {
-            var pe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == shot.OriginalEventIdx);
-            if (pe != null) shot.EventId = pe.EventId;
+                var pe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == shot.OriginalEventIdx);
+                if (pe != null) shot.EventId = pe.EventId;
 
                 var containingPossession = allPossessions
                     .FirstOrDefault(p => shot.EventId >= p.StartEventId &&
@@ -138,11 +142,11 @@ if (pbp.RosterSpots != null)
             await _dbManager.InsertShotsAsync(conn, shots);
 
             // Backfill event_id on eventPlayers
-foreach (var ep in eventPlayers)
-{
-    var pe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == ep.OriginalEventIdx);
-    if (pe != null) ep.EventId = pe.EventId;
-}
+            foreach (var ep in eventPlayers)
+            {
+                var pe = processedEvents.FirstOrDefault(e => e.OriginalEventIdx == ep.OriginalEventIdx);
+                if (pe != null) ep.EventId = pe.EventId;
+            }
 
             await _dbManager.InsertEventPlayersAsync(conn, eventPlayers);
 
@@ -160,7 +164,12 @@ foreach (var ep in eventPlayers)
     }
 
     private (List<ProcessedEvent> events, List<Shot> shots, List<EventPlayer> eventPlayers)
-        ProcessEvents(List<NhlPlay> plays, int gameId, int homeTeamId, int awayTeamId)
+        ProcessEvents(
+            List<NhlPlay> plays,
+            int gameId,
+            int homeTeamId,
+            int awayTeamId,
+            Dictionary<int, int> playerTeamLookup)
     {
         var events = new List<ProcessedEvent>();
         var shots = new List<Shot>();
@@ -178,7 +187,7 @@ foreach (var ep in eventPlayers)
             var period = play.Period;
             var periodTimeSeconds = ParseTimeInPeriod(play.TimeInPeriod);
             var strength = play.StrengthCode;
-            var eventTeamId = play.TeamId;
+            var eventTeamId = ResolveEventTeamId(eventType, play, playerTeamLookup, homeTeamId, awayTeamId);
 
             // Normalize coordinates
             bool isHomeEvent = eventTeamId == homeTeamId;
@@ -187,12 +196,11 @@ foreach (var ep in eventPlayers)
                 period, isHomeEvent,
                 out int? xNorm, out int? yNorm);
 
-            // Determine zone from coordinates if not provided
-            string zone = play.ZoneCode;
-            if (string.IsNullOrEmpty(zone) && xNorm != null)
-            {
-                zone = CoordinateNormalizer.DetermineZone(xNorm, eventTeamId, homeTeamId);
-            }
+            // Prefer coordinate-derived zones when possible. NHL zoneCode can be
+            // blocker-relative for blocked shots, which pollutes possession logic.
+            string zone = xNorm != null && eventTeamId != null
+                ? CoordinateNormalizer.DetermineZone(xNorm, eventTeamId, homeTeamId)
+                : play.ZoneCode;
 
             // Normalize zone codes: NHL API sometimes returns "O"/"D"/"N" instead of "OZ"/"DZ"/"NZ"
             zone = zone?.ToUpperInvariant() switch
@@ -248,50 +256,50 @@ foreach (var ep in eventPlayers)
             events.Add(processedEvent);
 
             // Track shots
-if (eventType is "shot-on-goal" or "goal" or "missed-shot" or "blocked-shot")
-{
-    int shooterId = play.Details?.ShootingPlayerId
-                 ?? play.Details?.ScoringPlayerId
-                 ?? play.Details?.PlayerId ?? 0;
-    
-    if (shooterId == 0)
-    {
-        _logger.LogDebug("Skipping shot at event {Idx}: no shooter ID available", i);
-    }
-    else
-    {
-        shots.Add(new Shot
-        {
-            OriginalEventIdx = i,
-            ShooterId = shooterId,
-            ShooterTeamId = eventTeamId ?? 0,
-            X = play.XCoord,
-            Y = play.YCoord,
-            XNorm = xNorm ?? 0,
-            YNorm = yNorm ?? 0,
-            ShotType = play.Details?.ShotType ?? "unknown",
-            IsGoal = eventType == "goal",
-            Xg = null
-        });
-    }
-}
+            if (eventType is "shot-on-goal" or "goal" or "missed-shot" or "blocked-shot")
+            {
+                int shooterId = ResolveShooterId(eventType, play);
+
+                if (shooterId == 0 && eventTeamId == null)
+                {
+                    _logger.LogDebug("Skipping shot at event {Idx}: no shooter or attacking team available", i);
+                }
+                else
+                {
+                    var shooterTeamId = ResolvePlayerTeamId(shooterId, playerTeamLookup, eventTeamId);
+
+                    shots.Add(new Shot
+                    {
+                        OriginalEventIdx = i,
+                        ShooterId = shooterId,
+                        ShooterTeamId = shooterTeamId,
+                        X = play.XCoord,
+                        Y = play.YCoord,
+                        XNorm = xNorm ?? 0,
+                        YNorm = yNorm ?? 0,
+                        ShotType = play.Details?.ShotType ?? "unknown",
+                        IsGoal = eventType == "goal",
+                        Xg = null
+                    });
+                }
+            }
 
             // Track on-ice players
             if (play.Details != null)
             {
-                AddPlayerIfNotNull(eventPlayers, play.Details.WinningPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.LosingPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.ScoringPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.ShootingPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.GoalieInNetId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.HittingPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.HitteePlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.CommittedByPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.DrawnByPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.BlockingPlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.PlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.Assist1PlayerId, eventTeamId, homeTeamId, i);
-                AddPlayerIfNotNull(eventPlayers, play.Details.Assist2PlayerId, eventTeamId, homeTeamId, i);
+                AddPlayerIfNotNull(eventPlayers, play.Details.WinningPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.LosingPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.ScoringPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.ShootingPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.GoalieInNetId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.HittingPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.HitteePlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.CommittedByPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.DrawnByPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.BlockingPlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.PlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.Assist1PlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
+                AddPlayerIfNotNull(eventPlayers, play.Details.Assist2PlayerId, eventTeamId, homeTeamId, i, playerTeamLookup);
             }
         }
         _logger.LogInformation("Game {GameId} zones: API={Api}, Derived={Derived}, Fallback={Fallback}, Missing={Missing}",
@@ -299,18 +307,77 @@ if (eventType is "shot-on-goal" or "goal" or "missed-shot" or "blocked-shot")
         return (events, shots, eventPlayers);
     }
 
-   private static void AddPlayerIfNotNull(List<EventPlayer> list, int? playerId,
-       int? eventTeamId, int homeTeamId, int originalEventIdx)  // ADD param
-   {
-       if (playerId == null) return;
-       list.Add(new EventPlayer
-       {
-           PlayerId = playerId.Value,
-           TeamId = eventTeamId ?? 0,
-           IsHome = eventTeamId == homeTeamId,
-           OriginalEventIdx = originalEventIdx  // SET IT
-       });
-   }
+    private static int? ResolveEventTeamId(
+        string eventType,
+        NhlPlay play,
+        Dictionary<int, int> playerTeamLookup,
+        int homeTeamId,
+        int awayTeamId)
+    {
+        if (eventType is "shot-on-goal" or "missed-shot" or "blocked-shot")
+        {
+            var shooterId = play.Details?.ShootingPlayerId;
+            if (shooterId != null && playerTeamLookup.TryGetValue(shooterId.Value, out var shooterTeamId))
+            {
+                return shooterTeamId;
+            }
+
+            if (eventType == "blocked-shot")
+            {
+                var blockerId = play.Details?.BlockingPlayerId;
+                if (blockerId != null && playerTeamLookup.TryGetValue(blockerId.Value, out var blockerTeamId))
+                {
+                    return blockerTeamId == homeTeamId ? awayTeamId : homeTeamId;
+                }
+            }
+        }
+
+        if (eventType == "goal")
+        {
+            var scorerId = play.Details?.ScoringPlayerId;
+            if (scorerId != null && playerTeamLookup.TryGetValue(scorerId.Value, out var scoringTeamId))
+            {
+                return scoringTeamId;
+            }
+        }
+
+        return play.TeamId;
+    }
+
+    private static int ResolveShooterId(string eventType, NhlPlay play)
+    {
+        if (eventType == "goal")
+            return play.Details?.ScoringPlayerId ?? play.Details?.ShootingPlayerId ?? 0;
+
+        if (eventType == "blocked-shot")
+            return play.Details?.ShootingPlayerId ?? 0;
+
+        return play.Details?.ShootingPlayerId ?? play.Details?.PlayerId ?? 0;
+    }
+
+    private static int ResolvePlayerTeamId(
+        int playerId,
+        Dictionary<int, int> playerTeamLookup,
+        int? fallbackTeamId)
+    {
+        return playerTeamLookup.TryGetValue(playerId, out var teamId)
+            ? teamId
+            : fallbackTeamId ?? 0;
+    }
+
+    private static void AddPlayerIfNotNull(List<EventPlayer> list, int? playerId,
+        int? eventTeamId, int homeTeamId, int originalEventIdx, Dictionary<int, int> playerTeamLookup)
+    {
+        if (playerId == null) return;
+        var teamId = ResolvePlayerTeamId(playerId.Value, playerTeamLookup, eventTeamId);
+        list.Add(new EventPlayer
+        {
+            PlayerId = playerId.Value,
+            TeamId = teamId,
+            IsHome = teamId == homeTeamId,
+            OriginalEventIdx = originalEventIdx  // SET IT
+        });
+    }
     private static (int home, int away) ParseSkatersFromSituationCode(string? situationCode)
     {
         if (string.IsNullOrEmpty(situationCode) || situationCode.Length < 4)

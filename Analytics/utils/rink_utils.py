@@ -1,62 +1,61 @@
 """
-Rink geometry calculations with proper home/away net handling.
+Rink geometry helpers for the normalized 200 x 85 coordinate system.
+
+Coordinates are stored from the home team's rink perspective:
+- home net: x=11
+- away net: x=189
+- y=42.5 is the center of the rink width
+
+For shot quality work, the target net should be based on the shooting team
+after ingestion has resolved `events.event_team_id` to the shooter/scorer team.
 """
 
 import numpy as np
 
-# Rink dimensions - NHL standard (renamed for clarity)
-RINK_LENGTH_FT = 200  # goal line to goal line
-RINK_WIDTH_FT = 85    # boards to boards
+RINK_LENGTH_FT = 200
+RINK_WIDTH_FT = 85
 
-# Net positions in normalized coordinates (home perspective)
-HOME_NET_X = 11    # Home goal line is 11ft from end boards
-HOME_NET_Y = 42.5  # Center of net (half of 85ft width)
+HOME_NET_X = 11
+HOME_NET_Y = 42.5
 
-AWAY_NET_X = 189   # Away goal line (200 - 11)
-AWAY_NET_Y = 42.5  # Center of net
+AWAY_NET_X = 189
+AWAY_NET_Y = 42.5
 
 
-def calculate_distance_to_net(x_norm, y_norm, is_shooting_home_net):
+def is_shooting_home_net(event_team_id, home_team_id):
+    """Return True when the shooting team is attacking the home net."""
+    return event_team_id != home_team_id
+
+
+def target_net_x(event_team_id, home_team_id):
+    """Return target net x-coordinate for a shot event."""
+    return HOME_NET_X if is_shooting_home_net(event_team_id, home_team_id) else AWAY_NET_X
+
+
+def calculate_distance_to_net(x_norm, y_norm, shooting_home_net):
+    """Calculate Euclidean distance from shot location to target net."""
+    net_x = HOME_NET_X if shooting_home_net else AWAY_NET_X
+    return np.sqrt((x_norm - net_x) ** 2 + (y_norm - HOME_NET_Y) ** 2)
+
+
+def calculate_shot_angle(x_norm, y_norm, shooting_home_net):
     """
-    Calculate Euclidean distance from shot location to target net.
-    
-    Args:
-        x_norm, y_norm: Shot coordinates in normalized 200x85 rink
-        is_shooting_home_net: True if shooting at home team's net (x=11)
-    
-    Returns:
-        Distance in feet
+    Calculate shot angle in degrees from the target net center line.
+
+    0 degrees is straight on from the slot; larger values indicate sharper
+    lateral angle. This matches the SQL expression used by the xG model:
+    atan2(abs(y - net_y), abs(x - net_x)).
     """
-    if is_shooting_home_net:
-        net_x, net_y = HOME_NET_X, HOME_NET_Y
-    else:
-        net_x, net_y = AWAY_NET_X, AWAY_NET_Y
-    
-    return np.sqrt((x_norm - net_x) ** 2 + (y_norm - net_y) ** 2)
+    net_x = HOME_NET_X if shooting_home_net else AWAY_NET_X
+    dx = abs(x_norm - net_x)
+    dy = abs(y_norm - HOME_NET_Y)
+    return np.degrees(np.arctan2(dy, dx))
 
 
-def calculate_shot_angle(x_norm, y_norm, is_shooting_home_net):
-    """
-    Calculate shot angle in degrees from goal line.
-    
-    0° = straight on (in close)
-    90° = parallel to goal line (sharp angle from boards)
-    
-    Args:
-        x_norm, y_norm: Shot coordinates
-        is_shooting_home_net: True if shooting at home net
-    
-    Returns:
-        Angle in degrees
-    """
-    if is_shooting_home_net:
-        net_x, net_y = HOME_NET_X, HOME_NET_Y
-    else:
-        net_x, net_y = AWAY_NET_X, AWAY_NET_Y
-    
-    dx = net_x - x_norm
-    dy = net_y - y_norm
-    
-    angle_rad = np.arctan2(abs(dx), abs(dy)) if dy != 0 else np.pi/2
-    
-    return np.degrees(angle_rad)
+TARGET_NET_X_SQL = """
+CASE
+    WHEN e.event_team_id = g.home_team_id THEN 189
+    WHEN e.event_team_id = g.away_team_id THEN 11
+    ELSE NULL
+END
+"""

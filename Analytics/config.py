@@ -1,14 +1,19 @@
 """
 Configuration for NHL PK Analytics Pipeline.
+
+Database settings default to the local development values but can be
+overridden with environment variables. Do not commit real credentials.
 """
+
+import os
 
 # Database connection
 DB_CONFIG = {
-    'host': 'localhost',
-    'database': 'nhl_pk_analytics',
-    'user': 'postgres',
-    'password': 'superuser',
-    'port': 5432
+    'host': os.getenv('NHL_DB_HOST', 'localhost'),
+    'database': os.getenv('NHL_DB_NAME', 'nhl_pk_analytics'),
+    'user': os.getenv('NHL_DB_USER', 'postgres'),
+    'password': os.getenv('NHL_DB_PASSWORD', ''),
+    'port': int(os.getenv('NHL_DB_PORT', '5432'))
 }
 
 # Rink dimensions (NHL standard)

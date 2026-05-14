@@ -3,8 +3,8 @@ namespace NhlPkIngest.Services;
 /// <summary>
 /// Normalizes NHL API coordinates to a consistent 200x85 rink perspective.
 /// All normalized coordinates are from the HOME team's perspective:
-///   - Home net at (0, 42.5) — left side
-///   - Away net at (200, 42.5) — right side
+///   - Home net at (0, 42.5) - left side
+///   - Away net at (200, 42.5) - right side
 ///   - x increases from home net to away net
 ///   - Offensive zone for home team: x > 150 (approximately)
 ///   - Offensive zone for away team: x < 50 (approximately)
@@ -160,15 +160,15 @@ public class CoordinateNormalizer
             return "NZ";
         }
     }
-    
-        /// <summary>
-        /// Determines zone from normalized x coordinate only (home perspective).
-        /// No team context needed — just rink position.
-        /// </summary>
+
+    /// <summary>
+    /// Determines zone from normalized x coordinate only (home perspective).
+    /// No team context needed - just rink position.
+    /// </summary>
     public static string DetermineZoneFromX(int? xNorm)
     {
         if (xNorm == null) return "NZ"; // default to neutral if no coordinate
-        
+
         if (xNorm < HomeBlueLine) return "DZ";      // 0-75 = defensive zone (home end)
         if (xNorm > AwayBlueLine) return "OZ";      // 125-200 = offensive zone (away end)
         return "NZ";                                  // 75-125 = neutral zone
@@ -182,10 +182,6 @@ public class CoordinateNormalizer
         if (prevXN == null || currXN == null) return false;
 
         bool isHome = teamId == homeTeamId;
-        double blueLine = isHome ? AwayBlueLine : HomeBlueLine;
-        double prevDistance = Math.Abs(prevXN.Value - blueLine);
-        double currDistance = Math.Abs(currXN.Value - blueLine);
-
         // Puck was in neutral zone and now in offensive zone
         bool wasInNeutral = prevXN.Value > HomeBlueLine && prevXN.Value < AwayBlueLine;
         bool nowInOffensive = isHome ? currXN.Value >= AwayBlueLine : currXN.Value <= HomeBlueLine;

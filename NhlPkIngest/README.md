@@ -1,68 +1,83 @@
 # NHL PK Ingest
 
-.NET console ingestion pipeline for the NHL penalty-kill analytics project.
+.NET 8 console application for loading NHL play-by-play data into the penalty-kill analytics database.
 
-This app pulls NHL play-by-play data, normalizes events into a PostgreSQL schema, tracks penalty-kill possessions, links shots back to possessions, and prepares the database for the Python analytics layer.
+This project is the data-ingestion side of the larger NHL PK Analytics repository. It is responsible for pulling games from the NHL API, normalizing event data, building penalty-kill possessions, linking shots to possessions, and keeping PostgreSQL ready for the Python analytics layer.
 
-## Project Status
+## Responsibilities
 
-- PostgreSQL schema: implemented
-- NHL schedule and play-by-play ingestion: implemented
-- Coordinate normalization: implemented
-- PK possession tracking: implemented, with strength-change possession boundaries
-- Shot-to-possession linking: implemented
-- Analytics diagnostics: lives in the sibling `Analytics/` folder for now
+- Fetch NHL game IDs by season.
+- Fetch play-by-play data for each game.
+- Upsert teams, players, games, and game-player participation.
+- Normalize rink coordinates and zones.
+- Store play-by-play events.
+- Store event-player relationships.
+- Track penalty-kill possessions.
+- Link shots to possessions.
+- Reprocess already-ingested games when ingestion logic changes.
 
-## Local Setup
+## Setup
 
-Prerequisites:
-
-- .NET 8 SDK
-- PostgreSQL
-- Python 3.10+ for the analytics project
-
-From this folder:
+From the repository root:
 
 ```powershell
-dotnet restore
-dotnet build
+Copy-Item .\NhlPkIngest\appsettings.template.json .\NhlPkIngest\appsettings.json
+```
+
+Edit `appsettings.json` with your local PostgreSQL connection string.
+
+Then build:
+
+```powershell
+dotnet build .\Data_ingestion.sln
+```
+
+Run ingestion:
+
+```powershell
+cd .\NhlPkIngest
 dotnet run
 ```
 
-The ingestion app reads database settings from `appsettings.json`. Use [appsettings.template.json](appsettings.template.json) as the safe starting point for local configuration. The real `appsettings.json` should stay local and untracked.
+## Configuration
+
+Important settings in `appsettings.json`:
+
+```json
+{
+  "Seasons": [
+    "20222023",
+    "20232024",
+    "20242025"
+  ],
+  "Ingest": {
+    "BatchSize": 10000,
+    "SkipExistingGames": false,
+    "LogEveryNGames": 10
+  }
+}
+```
+
+Use `SkipExistingGames: false` when you need to replace game-scoped data after fixing ingestion, possession tracking, or shot-linking logic.
 
 ## Database
 
-The schema is maintained in [schema.sql](schema.sql). Re-running ingestion for an already-ingested game replaces that game's dependent rows so possession and shot-linking fixes can be applied by reprocessing games.
-
-## Important Notes
-
-The Git repository is currently rooted in this `NhlPkIngest/` folder, while the analytics code is one directory above it at `../Analytics/`. Git cannot track files outside its working tree, so `Analytics/` will not be included until the repository root is moved up to `Data_ingestion/` or the analytics folder is moved inside this repo.
-
-Recommended final layout:
+The schema lives in:
 
 ```text
-Data_ingestion/
-├── Analytics/
-├── NhlPkIngest/
-├── Data_ingestion.sln
-├── README.md
-└── .gitignore
+schema.sql
 ```
 
-## Diagnostics
+The app initializes the schema at startup. Game reprocessing deletes and replaces dependent rows for that game so fixes can flow through to:
 
-After ingestion, run the analytics diagnostics from the sibling `Analytics/` directory:
+- events
+- event players
+- possessions
+- shots
 
-```bash
-cd "/d/Hockey-data project/Code/Data_ingestion/Analytics"
-./venv/Scripts/python.exe -m diagnostics.join_explosion
-./venv/Scripts/python.exe -m diagnostics.validate_coordinates
-./venv/Scripts/python.exe -m diagnostics.validate_possessions
-```
+## Current Notes
 
-Current known diagnostic priorities:
-
-- Forward forechecking player-level joins need deduping before modeling.
-- Defenseman gap-control joins should use a deduped event-level base.
-- Possession validation should be rerun after re-ingesting with the latest strength-change boundary fix.
+- `appsettings.json` is ignored and should stay local.
+- `appsettings.template.json` is committed as the safe template.
+- The analytics code lives in `../Analytics`.
+- After re-ingestion, run the analytics diagnostics from `Analytics/` to validate joins, coordinates, possessions, and xG readiness.

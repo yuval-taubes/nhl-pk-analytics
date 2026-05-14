@@ -41,12 +41,14 @@ class XGModel:
                 e.event_team_id,
                 g.home_team_id,
                 g.away_team_id,
-                -- Target net using period parity
+                -- Target net in home-perspective normalized coordinates.
+                -- Home team attacks the away net (x=189); away team attacks
+                -- the home net (x=11). This relies on ingestion resolving
+                -- event_team_id to the shooter/scorer team for shot events.
                 CASE 
-                    WHEN (e.period % 2 = 1) AND e.event_team_id = g.home_team_id THEN 189
-                    WHEN (e.period % 2 = 1) AND e.event_team_id = g.away_team_id THEN 11
-                    WHEN (e.period % 2 = 0) AND e.event_team_id = g.home_team_id THEN 11
-                    WHEN (e.period % 2 = 0) AND e.event_team_id = g.away_team_id THEN 189
+                    WHEN e.event_team_id = g.home_team_id THEN 189
+                    WHEN e.event_team_id = g.away_team_id THEN 11
+                    ELSE NULL
                 END AS target_net_x,
                 -- Previous event for rebound detection (game-level chronology, FIXED)
                 LAG(e.event_type) OVER (
@@ -68,6 +70,7 @@ class XGModel:
               AND s.y_norm IS NOT NULL
               AND s.shot_type IS NOT NULL
               AND s.is_goal IN (0, 1)
+              AND e.event_team_id IS NOT NULL
         )
         SELECT 
             shot_id,
@@ -111,13 +114,13 @@ class XGModel:
         
         # Angle diagnostics
         a = df['shot_angle'].quantile([0.1, 0.5, 0.9])
-        logger.info(f"Angle: median={a[0.5]:.1f}°, 90th={a[0.9]:.1f}°")
+        logger.info(f"Angle: median={a[0.5]:.1f} deg, 90th={a[0.9]:.1f} deg")
         
         # Validate orientation
         if d[0.99] > 120:
-            logger.warning("99th percentile distance > 120ft — check coordinate orientation")
+            logger.warning("99th percentile distance > 120ft - check coordinate orientation")
         if a[0.5] > 60:
-            logger.warning("Median angle > 60° — possible arctan inversion")
+            logger.warning("Median angle > 60 deg - possible arctan inversion")
         
         return df
     
@@ -162,7 +165,7 @@ class XGModel:
             max_iter=2000,
             random_state=random_state,
             C=0.1
-            # No class_weight — calibration matters more than classification
+            # No class_weight: calibration matters more than classification.
         )
         
         self.model.fit(X_train, y_train)
@@ -201,14 +204,14 @@ class XGModel:
         logger.info(f"Training complete: AUC={auc:.4f}, Brier={brier:.4f}")
         
         if auc < 0.70:
-            logger.warning(f"AUC {auc:.3f} below 0.70 — features may be insufficient")
+            logger.warning(f"AUC {auc:.3f} below 0.70 - features may be insufficient")
         else:
-            logger.info(f"✓ AUC acceptable")
+            logger.info("AUC acceptable")
         
         if brier > 0.10:
-            logger.warning(f"Brier {brier:.4f} above 0.10 — calibration check recommended")
+            logger.warning(f"Brier {brier:.4f} above 0.10 - calibration check recommended")
         else:
-            logger.info(f"✓ Brier acceptable")
+            logger.info("Brier acceptable")
         
         # Log top coefficients
         sorted_coefs = sorted(coefs.items(), key=lambda x: x[1], reverse=True)
@@ -249,10 +252,9 @@ class XGModel:
                 g.home_team_id,
                 g.away_team_id,
                 CASE 
-                    WHEN (e.period % 2 = 1) AND e.event_team_id = g.home_team_id THEN 189
-                    WHEN (e.period % 2 = 1) AND e.event_team_id = g.away_team_id THEN 11
-                    WHEN (e.period % 2 = 0) AND e.event_team_id = g.home_team_id THEN 11
-                    WHEN (e.period % 2 = 0) AND e.event_team_id = g.away_team_id THEN 189
+                    WHEN e.event_team_id = g.home_team_id THEN 189
+                    WHEN e.event_team_id = g.away_team_id THEN 11
+                    ELSE NULL
                 END AS target_net_x,
                 LAG(e.event_type) OVER (PARTITION BY e.game_id ORDER BY e.event_idx) AS prev_event_type,
                 LAG(e.event_team_id) OVER (PARTITION BY e.game_id ORDER BY e.event_idx) AS prev_event_team,
@@ -267,6 +269,7 @@ class XGModel:
               AND s.xg IS NULL
               AND s.x_norm BETWEEN 0 AND 200
               AND s.y_norm BETWEEN 0 AND 85
+              AND e.event_team_id IS NOT NULL
         )
         SELECT 
             shot_id,

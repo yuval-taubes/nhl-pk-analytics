@@ -139,11 +139,11 @@ def diagnose_join_explosion(db):
         logger.info(f"  Inflation:   {ratio:>10.1f}x")
         
         if ratio > 3.0:
-            logger.error(f"  ⚠ CRITICAL: DISTINCT ON required before player-level models")
+            logger.error("  CRITICAL: DISTINCT ON required before player-level models")
         elif ratio > 1.5:
-            logger.warning(f"  ⚠ Warning: DISTINCT ON recommended")
+            logger.warning("  Warning: DISTINCT ON recommended")
         else:
-            logger.info(f"  ✓ Acceptable")
+            logger.info("  Acceptable")
     
     return results
 

@@ -33,9 +33,11 @@ class DatabaseConnection:
     def query_to_df(self, query, params=None):
         """Execute query and return results as DataFrame."""
         try:
-            if params:
-                return pd.read_sql_query(query, self.conn, params=params)
-            return pd.read_sql_query(query, self.conn)
+            with self.conn.cursor() as cursor:
+                cursor.execute(query, params)
+                columns = [desc[0] for desc in cursor.description]
+                rows = cursor.fetchall()
+            return pd.DataFrame(rows, columns=columns)
         except Exception as e:
             logger.error(f"Query failed: {e}")
             logger.debug(f"Query: {query[:200]}...")

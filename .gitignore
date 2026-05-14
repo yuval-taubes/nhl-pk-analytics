@@ -39,6 +39,8 @@ Analytics/runs/
 Analytics/output/
 Analytics/outputs/
 Analytics/artifacts/
+**/artifacts/
+Analytics/models/trained/
 **/*.joblib
 **/*.pkl
 **/*.pickle

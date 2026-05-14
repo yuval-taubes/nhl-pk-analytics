@@ -275,8 +275,8 @@ public class GameIngester
                         ShooterTeamId = shooterTeamId,
                         X = play.XCoord,
                         Y = play.YCoord,
-                        XNorm = xNorm ?? 0,
-                        YNorm = yNorm ?? 0,
+                        XNorm = xNorm,
+                        YNorm = yNorm,
                         ShotType = play.Details?.ShotType ?? "unknown",
                         IsGoal = eventType == "goal",
                         Xg = null

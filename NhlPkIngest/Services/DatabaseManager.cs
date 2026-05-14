@@ -201,14 +201,14 @@ public class DatabaseManager
             await writer.WriteAsync(evt.Period, NpgsqlDbType.Integer);
             await writer.WriteAsync(evt.PeriodTimeSeconds, NpgsqlDbType.Integer);
             await writer.WriteAsync(evt.EventType, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(evt.EventTeamId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(evt.X, NpgsqlDbType.Integer);
-            await writer.WriteAsync(evt.Y, NpgsqlDbType.Integer);
-            await writer.WriteAsync(evt.XNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(evt.YNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(evt.Zone, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(evt.Strength, NpgsqlDbType.Varchar);
-            await writer.WriteAsync(evt.Description, NpgsqlDbType.Text);
+            await writer.WriteAsync(evt.EventTeamId == null ? DBNull.Value : (object)evt.EventTeamId.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(evt.X == null ? DBNull.Value : (object)evt.X.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(evt.Y == null ? DBNull.Value : (object)evt.Y.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(evt.XNorm == null ? DBNull.Value : (object)evt.XNorm.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(evt.YNorm == null ? DBNull.Value : (object)evt.YNorm.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(evt.Zone == null ? DBNull.Value : (object)evt.Zone, NpgsqlDbType.Varchar);
+            await writer.WriteAsync(evt.Strength == null ? DBNull.Value : (object)evt.Strength, NpgsqlDbType.Varchar);
+            await writer.WriteAsync(evt.Description == null ? DBNull.Value : (object)evt.Description, NpgsqlDbType.Text);
             await writer.WriteAsync(evt.HomeSkaters, NpgsqlDbType.Integer);
             await writer.WriteAsync(evt.AwaySkaters, NpgsqlDbType.Integer);
         }
@@ -308,11 +308,11 @@ public class DatabaseManager
             await writer.WriteAsync(shot.EventId, NpgsqlDbType.Integer);
             await writer.WriteAsync(shot.PossessionId == 0 ? DBNull.Value : (object)shot.PossessionId, NpgsqlDbType.Integer);
             await writer.WriteAsync(shot.ShooterId == 0 ? DBNull.Value : (object)shot.ShooterId, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.X, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.Y, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.XNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.YNorm, NpgsqlDbType.Integer);
-            await writer.WriteAsync(shot.ShotType, NpgsqlDbType.Varchar);
+            await writer.WriteAsync(shot.X == null ? DBNull.Value : (object)shot.X.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shot.Y == null ? DBNull.Value : (object)shot.Y.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shot.XNorm == null ? DBNull.Value : (object)shot.XNorm.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shot.YNorm == null ? DBNull.Value : (object)shot.YNorm.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shot.ShotType == null ? DBNull.Value : (object)shot.ShotType, NpgsqlDbType.Varchar);
             await writer.WriteAsync(shot.IsGoal, NpgsqlDbType.Boolean);
             await writer.WriteAsync(shot.Xg, NpgsqlDbType.Numeric);
         }

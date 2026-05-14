@@ -57,7 +57,7 @@ public class Possession
     public int GameId { get; set; }
     public int TeamId { get; set; }
     public int StartEventId { get; set; }
-    public int StartEventOriginalIdx { get; set; } 
+    public int StartEventOriginalIdx { get; set; }
     public int EndEventId { get; set; }
     public int EndEventOriginalIdx { get; set; }
     public string? Strength { get; set; }
@@ -82,8 +82,8 @@ public class Shot
     public int ShooterTeamId { get; set; } // internal use
     public int? X { get; set; }
     public int? Y { get; set; }
-    public int XNorm { get; set; }
-    public int YNorm { get; set; }
+    public int? XNorm { get; set; }
+    public int? YNorm { get; set; }
     public string? ShotType { get; set; }
     public bool IsGoal { get; set; }
     public decimal? Xg { get; set; }

@@ -7,6 +7,8 @@ namespace NhlPkIngest.Services;
 
 public class DatabaseManager
 {
+    private const int MaintenanceCommandTimeoutSeconds = 180;
+
     private readonly string _connectionString;
     private readonly ILogger<DatabaseManager> _logger;
 
@@ -29,6 +31,7 @@ public class DatabaseManager
         var ddl = await File.ReadAllTextAsync("schema.sql");
         await using var conn = CreateConnection();
         await using var cmd = new NpgsqlCommand(ddl, conn);
+        cmd.CommandTimeout = MaintenanceCommandTimeoutSeconds;
         await cmd.ExecuteNonQueryAsync();
         _logger.LogInformation("Schema initialization complete.");
     }
@@ -51,8 +54,14 @@ public class DatabaseManager
     {
         var statements = new[]
         {
-            "DELETE FROM shots WHERE event_id IN (SELECT event_id FROM events WHERE game_id = @gameId)",
-            "DELETE FROM event_players WHERE event_id IN (SELECT event_id FROM events WHERE game_id = @gameId)",
+            @"DELETE FROM shots s
+              USING events e
+              WHERE s.event_id = e.event_id
+                AND e.game_id = @gameId",
+            @"DELETE FROM event_players ep
+              USING events e
+              WHERE ep.event_id = e.event_id
+                AND e.game_id = @gameId",
             "DELETE FROM possessions WHERE game_id = @gameId",
             "DELETE FROM events WHERE game_id = @gameId",
             "DELETE FROM game_players WHERE game_id = @gameId"
@@ -61,8 +70,10 @@ public class DatabaseManager
         foreach (var sql in statements)
         {
             await using var cmd = new NpgsqlCommand(sql, conn, transaction);
-            cmd.Parameters.AddWithValue("gameId", gameId);
-            await cmd.ExecuteNonQueryAsync();
+            cmd.CommandTimeout = MaintenanceCommandTimeoutSeconds;
+            cmd.Parameters.Add("gameId", NpgsqlDbType.Integer).Value = gameId;
+            var deleted = await cmd.ExecuteNonQueryAsync();
+            _logger.LogDebug("Deleted {Count} existing rows for game {GameId}", deleted, gameId);
         }
     }
 

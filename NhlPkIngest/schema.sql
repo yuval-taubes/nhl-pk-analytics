@@ -123,9 +123,14 @@ CREATE TABLE IF NOT EXISTS ga_sequences (
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_events_game ON events(game_id, event_idx);
 CREATE INDEX IF NOT EXISTS idx_events_strength ON events(strength) WHERE strength IN ('4v5', '3v5', '5v4', '5v3');
+CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
 CREATE INDEX IF NOT EXISTS idx_possessions_game_team ON possessions(game_id, team_id);
+CREATE INDEX IF NOT EXISTS idx_possessions_start_event ON possessions(start_event_id);
+CREATE INDEX IF NOT EXISTS idx_possessions_end_event ON possessions(end_event_id);
 CREATE INDEX IF NOT EXISTS idx_possessions_entry ON possessions(entry_type) WHERE entry_type IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_shots_event ON shots(event_id);
 CREATE INDEX IF NOT EXISTS idx_shots_possession ON shots(possession_id);
+CREATE INDEX IF NOT EXISTS idx_event_players_event ON event_players(event_id);
 
 -- Make re-ingestion idempotent for existing databases too. CREATE TABLE IF NOT EXISTS
 -- will not update old FK definitions, so replace the relevant constraints explicitly.

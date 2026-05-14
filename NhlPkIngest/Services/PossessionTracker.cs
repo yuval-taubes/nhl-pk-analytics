@@ -216,7 +216,7 @@ public class PossessionTracker
                 // Change of possession in OZ
                 if (!possessionEnded &&
                     IsChangeOfPossession(evt.EventType ?? "", evt.EventTeamId, previousTeamId) &&
-                    evt.Zone == "OZ")
+                    IsInTeamOffensiveZone(evt, currentPossession.TeamId, homeTeamId))
                 {
                     endReason = "TURNOVER";
                     possessionEnded = true;
@@ -388,6 +388,26 @@ public class PossessionTracker
 
         return false;
     }
+
+    private static bool IsInTeamOffensiveZone(ProcessedEvent evt, int teamId, int homeTeamId)
+    {
+        if (evt.XNorm != null)
+        {
+            bool isHomeTeam = teamId == homeTeamId;
+            return isHomeTeam
+                ? evt.XNorm >= CoordinateNormalizer.AwayBlueLine
+                : evt.XNorm <= CoordinateNormalizer.HomeBlueLine;
+        }
+
+        if (evt.EventTeamId == teamId)
+            return evt.Zone == "OZ";
+
+        if (evt.EventTeamId != null)
+            return evt.Zone == "DZ";
+
+        return false;
+    }
+
     private static bool IsClearEvent(string? eventType)
     {
         if (string.IsNullOrEmpty(eventType)) return false;

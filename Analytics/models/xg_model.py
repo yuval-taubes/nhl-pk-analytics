@@ -69,7 +69,7 @@ class XGModel:
             WHERE s.x_norm IS NOT NULL 
               AND s.y_norm IS NOT NULL
               AND s.shot_type IS NOT NULL
-              AND s.is_goal IN (0, 1)
+              AND s.is_goal IS NOT NULL
               AND e.event_team_id IS NOT NULL
         )
         SELECT 
@@ -103,6 +103,8 @@ class XGModel:
         ]
         if len(df) < initial:
             logger.warning(f"Filtered {initial - len(df)} shots with impossible coordinates")
+
+        df['is_goal'] = df['is_goal'].astype(bool).astype(int)
         
         logger.info(f"Training sample: {len(df):,} shots, "
                    f"goal rate: {df['is_goal'].mean():.3f}")
@@ -153,7 +155,7 @@ class XGModel:
         
         df = self.fetch_training_data()
         X = self.prepare_features(df)
-        y = df['is_goal'].values
+        y = df['is_goal'].astype(int).values
         
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=random_state, stratify=y

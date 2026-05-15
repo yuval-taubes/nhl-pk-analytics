@@ -216,7 +216,7 @@ public class PossessionTracker
                 // Change of possession in OZ
                 if (!possessionEnded &&
                     IsChangeOfPossession(evt.EventType ?? "", evt.EventTeamId, previousTeamId) &&
-                    IsInTeamOffensiveZone(evt, currentPossession.TeamId, homeTeamId))
+                    IsPossessionTeamChange(evt, currentPossession.TeamId, homeTeamId))
                 {
                     endReason = "TURNOVER";
                     possessionEnded = true;
@@ -406,6 +406,25 @@ public class PossessionTracker
             return evt.Zone == "DZ";
 
         return false;
+    }
+
+    private static bool IsPossessionTeamChange(ProcessedEvent evt, int possessionTeamId, int homeTeamId)
+    {
+        if (evt.EventTeamId == null || evt.EventTeamId == possessionTeamId)
+            return false;
+
+        if (IsStoppage(evt.EventType) || evt.EventType?.Equals("faceoff", StringComparison.OrdinalIgnoreCase) == true)
+            return false;
+
+        // Some NHL event zones are relative to the event team. A defensive-zone event
+        // by the opponent can still be inside the original possession team's OZ.
+        if (IsInTeamOffensiveZone(evt, possessionTeamId, homeTeamId))
+            return true;
+
+        // Blocked shots are noisy in play-by-play ownership, but a different event
+        // team inside the same active possession should end that possession before
+        // later opponent shot events get absorbed into it.
+        return evt.EventType is "shot-on-goal" or "missed-shot" or "blocked-shot" or "takeaway" or "giveaway" or "hit";
     }
 
     private static bool IsClearEvent(string? eventType)

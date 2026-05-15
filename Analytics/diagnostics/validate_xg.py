@@ -3,6 +3,7 @@ Validate trained xG model outputs against basic sanity checks.
 """
 
 import logging
+import pandas as pd
 
 from db import DatabaseConnection
 
@@ -13,6 +14,18 @@ def validate_xg(db, model=None):
     """Run validation checks on xG model outputs."""
     checks = {}
     all_passed = True
+
+    xg_count = db.query_to_df("""
+        SELECT COUNT(*) AS count
+        FROM shots
+        WHERE xg IS NOT NULL AND xg > 0
+    """)
+    n_xg = int(xg_count['count'].iloc[0]) if not xg_count.empty else 0
+    checks['shots_with_xg'] = n_xg
+
+    if n_xg == 0:
+        logger.warning("No positive xG values found. Train/backfill the xG model before running xG validation.")
+        return checks, False
 
     if model and hasattr(model, 'training_metrics'):
         auc = model.training_metrics.get('auc', 0)
@@ -85,13 +98,18 @@ def validate_xg(db, model=None):
 
     if not distance_check.empty:
         corr = distance_check['dist_corr'].iloc[0]
-        logger.info(f"Distance-xG correlation: {corr:.4f}")
-        if corr is not None and corr < 0:
+        if pd.isna(corr):
+            logger.warning("Distance-xG correlation unavailable - not enough non-null xG variation")
+            all_passed = False
+            checks['distance_correlation'] = None
+        elif corr < 0:
+            logger.info(f"Distance-xG correlation: {corr:.4f}")
             logger.info("Closer shots have higher xG (expected)")
         else:
+            logger.info(f"Distance-xG correlation: {corr:.4f}")
             logger.warning("Distance-xG correlation unexpected")
             all_passed = False
-        checks['distance_correlation'] = float(corr) if corr else None
+            checks['distance_correlation'] = float(corr)
 
     xg_dist = db.query_to_df("""
         SELECT
@@ -106,6 +124,12 @@ def validate_xg(db, model=None):
 
     if not xg_dist.empty:
         d = xg_dist.to_dict('records')[0]
+        if d['min_xg'] is None:
+            logger.warning("xG distribution unavailable - no positive xG rows")
+            all_passed = False
+            checks['xg_distribution'] = d
+            return checks, all_passed
+
         logger.info(
             f"xG distribution: min={d['min_xg']:.4f}, median={d['median_xg']:.4f}, "
             f"max={d['max_xg']:.4f}, p95={d['p95_xg']:.4f}"

@@ -140,9 +140,22 @@ def main():
         logger.info("=" * 60)
         
         from models.model1_blue_line import BlueLineDenialModel
+        from models.model1_entry_attempts import EntryAttemptImpactModel
         
         model1 = BlueLineDenialModel(db)
-        results = model1.run()
+        retained_results = model1.run()
+
+        logger.info("\n" + "=" * 60)
+        logger.info("Running Model 1B: Entry Attempt Impact Analysis")
+        logger.info("=" * 60)
+
+        model1b = EntryAttemptImpactModel(db)
+        attempt_results = model1b.run()
+
+        results = {
+            'retained_possession_model': retained_results,
+            'entry_attempt_model': attempt_results
+        }
         
         # Save results
         import json
@@ -153,7 +166,8 @@ def main():
         logger.info(f"\nResults saved to {results_path}")
         logger.info(f"\n{'='*60}")
         logger.info(f"INTERPRETATION:")
-        logger.info(f"{results['estimated_effect']['interpretation']}")
+        logger.info(f"{retained_results['estimated_effect']['interpretation']}")
+        logger.info(f"{attempt_results['estimated_effect']['interpretation']}")
         logger.info(f"{'='*60}")
         
         end_time = datetime.now()

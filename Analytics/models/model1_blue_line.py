@@ -84,6 +84,7 @@ class BlueLineDenialModel:
         JOIN games g ON p.game_id = g.game_id
         JOIN events e ON p.start_event_id = e.event_id
         WHERE p.team_id = p.pp_team_id
+          AND e.event_type <> 'faceoff'
         """
 
         logger.info("Fetching PK possession data...")

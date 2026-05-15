@@ -101,16 +101,22 @@ public class PossessionTracker
                 // If same team already has possession, this is a re-entry - update entry info
                 if (currentPossession != null && currentPossession.TeamId == evt.EventTeamId)
                 {
-                    currentPossession.EntryType = classification switch
+                    // Preserve faceoff-start context. Otherwise OZ faceoff wins can
+                    // later be relabeled as entry possessions, which contaminates
+                    // entry-type models downstream.
+                    if (currentPossession.EntryType != "FACEOFF_START")
                     {
-                        EntryClassification.ControlledCarry => "CONTROLLED",
-                        EntryClassification.ControlledPass => "CONTROLLED",
-                        EntryClassification.DumpIn => "DUMP_IN",
-                        _ => currentPossession.EntryType
-                    };
-                    currentPossession.EntryX = evt.XNorm;
-                    currentPossession.EntryY = evt.YNorm;
-                    currentPossession.StartZone = "OZ";
+                        currentPossession.EntryType = classification switch
+                        {
+                            EntryClassification.ControlledCarry => "CONTROLLED",
+                            EntryClassification.ControlledPass => "CONTROLLED",
+                            EntryClassification.DumpIn => "DUMP_IN",
+                            _ => currentPossession.EntryType
+                        };
+                        currentPossession.EntryX = evt.XNorm;
+                        currentPossession.EntryY = evt.YNorm;
+                        currentPossession.StartZone = "OZ";
+                    }
                 }
                 else
                 {

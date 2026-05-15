@@ -120,6 +120,19 @@ CREATE TABLE IF NOT EXISTS ga_sequences (
     frequency_rank INTEGER
 );
 
+-- Player scouting model outputs
+CREATE TABLE IF NOT EXISTS player_scouting (
+    scout_id SERIAL PRIMARY KEY,
+    player_id INTEGER REFERENCES players(player_id),
+    season VARCHAR(8),
+    model_name VARCHAR(50),
+    metric_name VARCHAR(50),
+    metric_value NUMERIC(8,4),
+    percentile INTEGER,
+    sample_size INTEGER,
+    computed_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_events_game ON events(game_id, event_idx);
 CREATE INDEX IF NOT EXISTS idx_events_strength ON events(strength) WHERE strength IN ('4v5', '3v5', '5v4', '5v3');
@@ -131,6 +144,8 @@ CREATE INDEX IF NOT EXISTS idx_possessions_entry ON possessions(entry_type) WHER
 CREATE INDEX IF NOT EXISTS idx_shots_event ON shots(event_id);
 CREATE INDEX IF NOT EXISTS idx_shots_possession ON shots(possession_id);
 CREATE INDEX IF NOT EXISTS idx_event_players_event ON event_players(event_id);
+CREATE INDEX IF NOT EXISTS idx_player_scouting_model ON player_scouting(model_name);
+CREATE INDEX IF NOT EXISTS idx_player_scouting_player ON player_scouting(player_id);
 
 -- Make re-ingestion idempotent for existing databases too. CREATE TABLE IF NOT EXISTS
 -- will not update old FK definitions, so replace the relevant constraints explicitly.

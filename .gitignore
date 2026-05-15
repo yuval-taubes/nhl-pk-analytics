@@ -38,6 +38,7 @@ __pycache__/
 Analytics/runs/
 Analytics/output/
 Analytics/outputs/
+Analytics/models/output/
 Analytics/artifacts/
 **/artifacts/
 Analytics/models/trained/

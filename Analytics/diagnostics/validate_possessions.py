@@ -137,8 +137,9 @@ def validate_possessions(db, sample_size=50, output_file=None):
             prev_zone = None
             prev_team = None
             prev_x = None
+            last_event_position = len(events) - 1
 
-            for _, event in events.iterrows():
+            for event_position, (_, event) in enumerate(events.iterrows()):
                 flags = []
 
                 event_type = _safe_text(event['event_type'], 'unknown')
@@ -158,7 +159,15 @@ def validate_possessions(db, sample_size=50, output_file=None):
 
                 if prev_team is not None and event_team is not None and prev_team != event_team:
                     flags.append("TEAM_CHANGE")
-                    if event_type not in ('takeaway', 'giveaway', 'blocked-shot', 'faceoff'):
+
+                    is_final_turnover_event = (
+                        event_position == last_event_position and
+                        possession['end_type'] == 'TURNOVER'
+                    )
+
+                    if is_final_turnover_event:
+                        flags.append("EXPECTED_TURNOVER_END")
+                    elif event_type not in ('takeaway', 'giveaway', 'blocked-shot', 'faceoff'):
                         issues['fake_clears'].append(pid)
 
                 flag_str = ", ".join(flags) if flags else ""
@@ -205,12 +214,16 @@ def validate_possessions(db, sample_size=50, output_file=None):
         f.write(f"Single event: {len(single_event)}\n")
         f.write(f"Very short (<1s): {len(very_short)}\n")
 
-        unique_issue_ids = set(split_entries + fake_clears + zone_confusion)
-        total_issues = len(unique_issue_ids)
+        hard_issue_ids = set(split_entries + fake_clears + single_event + very_short)
+        review_issue_ids = set(zone_confusion)
+        total_issues = len(hard_issue_ids)
         issue_rate = total_issues / max(issues['total_checked'], 1)
+        review_rate = len(review_issue_ids) / max(issues['total_checked'], 1)
 
         f.write(f"\nOverall issue rate: {issue_rate:.1%}\n")
-        f.write(f"Unique possessions with issues: {total_issues}\n")
+        f.write(f"Unique possessions with hard issues: {total_issues}\n")
+        f.write(f"Coordinate review rate: {review_rate:.1%}\n")
+        f.write(f"Unique possessions with coordinate review flags: {len(review_issue_ids)}\n")
 
         if issue_rate > 0.20:
             f.write("CONCLUSION: FAIL - Possession segmentation needs fixing\n")

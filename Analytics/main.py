@@ -101,17 +101,27 @@ def main():
         xg = XGModel(db)
         model_path = 'models/trained/xg_model.joblib'
         
+        should_train = True
         if os.path.exists(model_path):
             logger.info("Loading existing xG model...")
             xg.load_model(model_path)
-            logger.info(f"  AUC: {xg.training_metrics.get('auc', 'N/A'):.4f}")
-            logger.info("Backfilling xG values...")
-            xg.backfill_xg()
-        else:
+            saved_version = xg.training_metrics.get('model_version')
+            if saved_version == XGModel.MODEL_VERSION:
+                should_train = False
+                logger.info(f"  AUC: {xg.training_metrics.get('auc', 'N/A'):.4f}")
+            else:
+                logger.info(
+                    f"Existing xG model version {saved_version or 'unknown'} "
+                    f"does not match {XGModel.MODEL_VERSION}; retraining."
+                )
+
+        if should_train:
             logger.info("Training new xG model...")
             xg.train()
             xg.save_model(model_path)
-            xg.backfill_xg()
+
+        logger.info("Backfilling xG values...")
+        xg.backfill_xg(recompute_all=should_train)
         
         # Validate xG quality
         auc = xg.training_metrics.get('auc', 0)

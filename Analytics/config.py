@@ -23,7 +23,8 @@ RINK_WIDTH_FT = 85
 # Validation thresholds
 class Thresholds:
     # Sample size minimums
-    MIN_POSSESSIONS_FOR_ATT = 100
+    MIN_POSSESSIONS_FOR_ATT = 75
+    TARGET_POSSESSIONS_FOR_ATT = 100
     MIN_GAMES_FOR_BOOTSTRAP = 30
     MIN_POSSESSION_SAMPLE = 50
     
@@ -44,6 +45,7 @@ class Thresholds:
     
     # xG model validation
     MIN_XG_AUC = 0.70
+    MIN_MAX_XG_WARNING = 0.50
     MAX_CALIBRATION_ERROR = 0.10
     
     # Bootstrap

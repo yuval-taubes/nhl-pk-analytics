@@ -6,6 +6,7 @@ import logging
 import pandas as pd
 
 from db import DatabaseConnection
+from config import Thresholds
 
 logger = logging.getLogger(__name__)
 
@@ -76,13 +77,11 @@ def validate_xg(db, model=None):
                 s.y_norm,
                 s.xg,
                 CASE
-                    WHEN e.event_team_id = g.home_team_id THEN 189
-                    WHEN e.event_team_id = g.away_team_id THEN 11
-                    ELSE NULL
+                    WHEN ABS(s.x_norm - 11) <= ABS(s.x_norm - 189) THEN 11
+                    ELSE 189
                 END AS target_net_x
             FROM shots s
             JOIN events e ON s.event_id = e.event_id
-            JOIN games g ON e.game_id = g.game_id
             WHERE s.xg IS NOT NULL
               AND s.xg > 0
               AND e.event_team_id IS NOT NULL
@@ -135,9 +134,10 @@ def validate_xg(db, model=None):
             f"max={d['max_xg']:.4f}, p95={d['p95_xg']:.4f}"
         )
 
-        if d['max_xg'] < 0.6:
-            logger.warning("Max xG < 0.6 - model may be severely underfit")
-            all_passed = False
+        if d['max_xg'] < Thresholds.MIN_MAX_XG_WARNING:
+            logger.warning(
+                f"Max xG < {Thresholds.MIN_MAX_XG_WARNING:.2f} - model may be underfit"
+            )
         elif d['max_xg'] > 0.95:
             logger.warning("Max xG > 0.95 - check for data leaks")
             all_passed = False

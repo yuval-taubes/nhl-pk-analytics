@@ -10,6 +10,8 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, brier_score_loss
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 import joblib
 import os
 
@@ -17,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class XGModel:
+    MODEL_VERSION = "shot_side_net_v2_scaled"
+
     def __init__(self, db_connection):
         self.db = db_connection
         self.model = None
@@ -41,14 +45,13 @@ class XGModel:
                 e.event_team_id,
                 g.home_team_id,
                 g.away_team_id,
-                -- Target net in home-perspective normalized coordinates.
-                -- Home team attacks the away net (x=189); away team attacks
-                -- the home net (x=11). This relies on ingestion resolving
-                -- event_team_id to the shooter/scorer team for shot events.
+                -- Infer the target net from the shot-side rink half. The
+                -- ingestion normalizer already adjusts coordinates by period
+                -- and team context, so team-based target nets can point to the
+                -- wrong end for normalized shot locations.
                 CASE 
-                    WHEN e.event_team_id = g.home_team_id THEN 189
-                    WHEN e.event_team_id = g.away_team_id THEN 11
-                    ELSE NULL
+                    WHEN ABS(s.x_norm - 11) <= ABS(s.x_norm - 189) THEN 11
+                    ELSE 189
                 END AS target_net_x,
                 -- Previous event for rebound detection (game-level chronology, FIXED)
                 LAG(e.event_type) OVER (
@@ -126,7 +129,7 @@ class XGModel:
         
         return df
     
-    def prepare_features(self, df):
+    def prepare_features(self, df, log_features=True):
         """Feature engineering for xG model."""
         features = pd.DataFrame()
         
@@ -146,7 +149,8 @@ class XGModel:
         features['strength_3v5'] = (df['strength'] == '3v5').astype(int)
         
         self.feature_names = features.columns.tolist()
-        logger.info(f"Features ({len(self.feature_names)}): {self.feature_names}")
+        if log_features:
+            logger.info(f"Features ({len(self.feature_names)}): {self.feature_names}")
         
         return features
     
@@ -163,11 +167,14 @@ class XGModel:
         
         logger.info(f"Train: {len(X_train):,}, Test: {len(X_test):,}")
         
-        self.model = LogisticRegression(
-            max_iter=2000,
-            random_state=random_state,
-            C=0.1
-            # No class_weight: calibration matters more than classification.
+        self.model = make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=2000,
+                random_state=random_state,
+                C=0.1
+                # No class_weight: calibration matters more than classification.
+            )
         )
         
         self.model.fit(X_train, y_train)
@@ -191,7 +198,8 @@ class XGModel:
                 })
         
         # Feature importance
-        coefs = dict(zip(self.feature_names, self.model.coef_[0].tolist()))
+        logistic = self.model.named_steps['logisticregression']
+        coefs = dict(zip(self.feature_names, logistic.coef_[0].tolist()))
         
         self.training_metrics = {
             'auc': float(auc),
@@ -199,6 +207,7 @@ class XGModel:
             'n_train': len(X_train),
             'n_test': len(X_test),
             'goal_rate': float(y.mean()),
+            'model_version': self.MODEL_VERSION,
             'calibration': deciles,
             'feature_importance': coefs
         }
@@ -230,15 +239,17 @@ class XGModel:
         """Generate xG predictions."""
         if self.model is None:
             raise ValueError("Model not trained or loaded")
-        X = self.prepare_features(df)
+        X = self.prepare_features(df, log_features=False)
         X = X[self.feature_names]
         return self.model.predict_proba(X)[:, 1]
     
-    def backfill_xg(self):
+    def backfill_xg(self, recompute_all=False):
         """Backfill xG into shots and possessions tables."""
         logger.info("Backfilling xG values...")
+
+        xg_filter = "" if recompute_all else "AND s.xg IS NULL"
         
-        query = """
+        query = f"""
         WITH shot_chronology AS (
             SELECT 
                 s.shot_id,
@@ -254,9 +265,8 @@ class XGModel:
                 g.home_team_id,
                 g.away_team_id,
                 CASE 
-                    WHEN e.event_team_id = g.home_team_id THEN 189
-                    WHEN e.event_team_id = g.away_team_id THEN 11
-                    ELSE NULL
+                    WHEN ABS(s.x_norm - 11) <= ABS(s.x_norm - 189) THEN 11
+                    ELSE 189
                 END AS target_net_x,
                 LAG(e.event_type) OVER (PARTITION BY e.game_id ORDER BY e.event_idx) AS prev_event_type,
                 LAG(e.event_team_id) OVER (PARTITION BY e.game_id ORDER BY e.event_idx) AS prev_event_team,
@@ -268,7 +278,7 @@ class XGModel:
             WHERE s.x_norm IS NOT NULL 
               AND s.y_norm IS NOT NULL
               AND s.shot_type IS NOT NULL
-              AND s.xg IS NULL
+              {xg_filter}
               AND s.x_norm BETWEEN 0 AND 200
               AND s.y_norm BETWEEN 0 AND 85
               AND e.event_team_id IS NOT NULL

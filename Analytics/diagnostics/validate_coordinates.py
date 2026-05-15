@@ -68,13 +68,11 @@ def validate_coordinates(db):
                 s.x_norm,
                 s.y_norm,
                 CASE
-                    WHEN e.event_team_id = g.home_team_id THEN 189
-                    WHEN e.event_team_id = g.away_team_id THEN 11
-                    ELSE NULL
+                    WHEN ABS(s.x_norm - 11) <= ABS(s.x_norm - 189) THEN 11
+                    ELSE 189
                 END AS target_net_x
             FROM shots s
             JOIN events e ON s.event_id = e.event_id
-            JOIN games g ON e.game_id = g.game_id
             WHERE s.x_norm IS NOT NULL
               AND s.y_norm IS NOT NULL
               AND e.event_team_id IS NOT NULL

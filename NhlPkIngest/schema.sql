@@ -208,3 +208,11 @@ ALTER TABLE event_players ADD CONSTRAINT event_players_player_id_fkey
 ALTER TABLE event_players DROP CONSTRAINT IF EXISTS event_players_team_id_fkey;
 ALTER TABLE event_players ADD CONSTRAINT event_players_team_id_fkey
     FOREIGN KEY (team_id) REFERENCES teams(team_id);
+
+ALTER TABLE event_players DROP CONSTRAINT IF EXISTS event_players_unique_event_player;
+ALTER TABLE event_players ADD CONSTRAINT event_players_unique_event_player
+    UNIQUE (event_id, player_id);
+
+ALTER TABLE player_scouting DROP CONSTRAINT IF EXISTS player_scouting_unique_metric;
+ALTER TABLE player_scouting ADD CONSTRAINT player_scouting_unique_metric
+    UNIQUE (player_id, season, model_name, metric_name);

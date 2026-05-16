@@ -122,9 +122,6 @@ class BlueLineDenialModel:
         frame['period'] = frame['period'].fillna(0).astype(int)
         frame['game_seconds'] = frame['game_seconds'].fillna(0).astype(float)
         frame['is_home_team'] = frame['is_home_team'].fillna(0).astype(int)
-        frame['duration_seconds'] = frame['duration_seconds'].fillna(0).astype(float)
-        frame['shot_count'] = frame['shot_count'].fillna(0).astype(float)
-
         frame = pd.get_dummies(
             frame,
             columns=['strength', 'start_zone'],
@@ -137,9 +134,7 @@ class BlueLineDenialModel:
             'pp_score_diff',
             'period',
             'game_seconds',
-            'is_home_team',
-            'duration_seconds',
-            'shot_count'
+            'is_home_team'
         ]
         common_causes.extend([c for c in frame.columns if c.startswith('strength_')])
         common_causes.extend([c for c in frame.columns if c.startswith('start_zone_')])
@@ -149,8 +144,9 @@ class BlueLineDenialModel:
     def estimate_effect(self):
         logger.info("Estimating entry-type association...")
 
-        att = self._estimate_att_psm(self.data)
+        att, diagnostics = self._estimate_att_psm(self.data, return_diagnostics=True)
         self.estimate = SimpleNamespace(value=att)
+        self.matching_diagnostics = diagnostics
 
         logger.info(f"Estimated ATT: {self.estimate.value:.4f}")
         logger.info("Computing game-clustered bootstrap CIs...")
@@ -174,7 +170,7 @@ class BlueLineDenialModel:
             f"{self.bootstrap_result['ci_upper']:.4f}]"
         )
 
-    def _estimate_att_psm(self, data, caliper=0.2):
+    def _estimate_att_psm(self, data, caliper=0.2, return_diagnostics=False):
         """
         Estimate ATT with simple one-to-one propensity score matching.
 
@@ -186,7 +182,17 @@ class BlueLineDenialModel:
         controls = frame[frame['treatment'] == 0].copy()
 
         if treated.empty or controls.empty:
-            return np.nan
+            diagnostics = {
+                'treated_total': int(len(treated)),
+                'control_total': int(len(controls)),
+                'treated_matched': 0,
+                'match_rate': 0.0,
+                'mean_distance': None,
+                'max_distance': None,
+                'unique_controls_used': 0,
+                'caliper': float(caliper),
+            }
+            return (np.nan, diagnostics) if return_diagnostics else np.nan
 
         X = frame[common_causes].astype(float)
         y = frame['treatment'].astype(int)
@@ -210,13 +216,25 @@ class BlueLineDenialModel:
         matched_treated = treated.reset_index(drop=True)
         keep = distances.flatten() <= caliper
 
-        if keep.sum() == 0:
-            return np.nan
+        diagnostics = {
+            'treated_total': int(len(treated)),
+            'control_total': int(len(controls)),
+            'treated_matched': int(keep.sum()),
+            'match_rate': float(keep.mean()),
+            'mean_distance': float(distances.flatten()[keep].mean()) if keep.sum() else None,
+            'max_distance': float(distances.flatten()[keep].max()) if keep.sum() else None,
+            'unique_controls_used': int(pd.Series(indices.flatten()[keep]).nunique()) if keep.sum() else 0,
+            'caliper': float(caliper),
+        }
 
-        return float(
+        if keep.sum() == 0:
+            return (np.nan, diagnostics) if return_diagnostics else np.nan
+
+        att = float(
             matched_treated.loc[keep, 'xg_sum'].astype(float).mean()
             - matched_controls.loc[keep, 'xg_sum'].astype(float).mean()
         )
+        return (att, diagnostics) if return_diagnostics else att
 
     def run(self):
         logger.info("=" * 60)
@@ -240,9 +258,11 @@ class BlueLineDenialModel:
                     f"{self.bootstrap_result['ci_upper']:.4f}])"
                 )
             },
+            'matching': self.matching_diagnostics,
             'caveats': [
                 "Exploratory result; do not treat as a settled causal claim",
                 "Entry classification is automated, not manually validated",
+                "Matching now uses pre-entry covariates only; duration_seconds and shot_count are reported descriptively but excluded as post-treatment variables",
                 "Only power-play-owned possessions are included; shorthanded counterattack possessions are excluded",
                 "Possession segmentation must pass validation before interpretation",
                 "Identification still assumes no unmeasured confounders",

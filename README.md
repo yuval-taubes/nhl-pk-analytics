@@ -252,11 +252,11 @@ The ingestion app initializes the schema automatically on startup.
 
 ## Known Issues / Next Work
 
-- Upgrade `System.Text.Json` from `8.0.4` because `dotnet build` reports a high-severity advisory.
 - Address the nullable warning in `PossessionTracker`.
 - Re-ingest data after the possession-boundary fix, then rerun possession validation.
 - Add event-level deduping bases for forward forechecking and defenseman gap-control models.
 - Move database credentials out of Python `Analytics/config.py` before sharing beyond local development.
+- Keep `docs/coordinate_conventions.md` and `Analytics/reports/latest_manpower_context.md` current after ingestion changes.
 - Add tests around possession splitting, shot possession linking, and xG backfill behavior.
 
 ## Roadmap

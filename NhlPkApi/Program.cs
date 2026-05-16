@@ -248,22 +248,22 @@ static JsonNode? FindModel(JsonNode run, int modelNumber)
     }
 
     return models
-        .Select(model => model.Value)
-        .FirstOrDefault(model => StringValue(model?["model"]).Contains(ModelKeyword(modelNumber), StringComparison.OrdinalIgnoreCase));
+        .FirstOrDefault(model => string.Equals(model.Key, ModelKey(modelNumber), StringComparison.OrdinalIgnoreCase))
+        .Value;
 }
 
-static string ModelKeyword(int modelNumber) => modelNumber switch
+static string ModelKey(int modelNumber) => modelNumber switch
 {
-    2 => "Foray",
-    3 => "Clearance",
-    4 => "Entry Defense",
-    5 => "Faceoff Play",
-    6 => "Forward Defensive",
-    7 => "Defenseman Disruption",
-    8 => "Discipline",
-    9 => "Center Faceoff",
-    10 => "Shot Blocks",
-    _ => $"Model {modelNumber}",
+    2 => "PkRushCommitmentModel",
+    3 => "IntentionalClearanceFaceoffModel",
+    4 => "PkForecheckStructureModel",
+    5 => "PkFaceoffModel",
+    6 => "ForwardForecheckingModel",
+    7 => "DefenseGapControlModel",
+    8 => "ForwardShotSuppressionModel",
+    9 => "CenterFaceoffValueModel",
+    10 => "NetFrontDefenseModel",
+    _ => "",
 };
 
 static object ToModelCard(string key, JsonNode? model)

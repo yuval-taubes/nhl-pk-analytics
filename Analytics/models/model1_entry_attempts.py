@@ -187,13 +187,23 @@ class EntryAttemptImpactModel:
 
         return frame, common_causes
 
-    def _estimate_att_psm(self, data, caliper=0.2):
+    def _estimate_att_psm(self, data, caliper=0.2, return_diagnostics=False):
         frame, common_causes = self._prepare_model_frame(data)
         treated = frame[frame['treatment'] == 1].copy()
         controls = frame[frame['treatment'] == 0].copy()
 
         if treated.empty or controls.empty:
-            return np.nan
+            diagnostics = {
+                'treated_total': int(len(treated)),
+                'control_total': int(len(controls)),
+                'treated_matched': 0,
+                'match_rate': 0.0,
+                'mean_distance': None,
+                'max_distance': None,
+                'unique_controls_used': 0,
+                'caliper': float(caliper),
+            }
+            return (np.nan, diagnostics) if return_diagnostics else np.nan
 
         X = frame[common_causes].astype(float)
         y = frame['treatment'].astype(int)
@@ -217,18 +227,31 @@ class EntryAttemptImpactModel:
         matched_treated = treated.reset_index(drop=True)
         keep = distances.flatten() <= caliper
 
-        if keep.sum() == 0:
-            return np.nan
+        diagnostics = {
+            'treated_total': int(len(treated)),
+            'control_total': int(len(controls)),
+            'treated_matched': int(keep.sum()),
+            'match_rate': float(keep.mean()),
+            'mean_distance': float(distances.flatten()[keep].mean()) if keep.sum() else None,
+            'max_distance': float(distances.flatten()[keep].max()) if keep.sum() else None,
+            'unique_controls_used': int(pd.Series(indices.flatten()[keep]).nunique()) if keep.sum() else 0,
+            'caliper': float(caliper),
+        }
 
-        return float(
+        if keep.sum() == 0:
+            return (np.nan, diagnostics) if return_diagnostics else np.nan
+
+        att = float(
             matched_treated.loc[keep, 'window_xg'].astype(float).mean()
             - matched_controls.loc[keep, 'window_xg'].astype(float).mean()
         )
+        return (att, diagnostics) if return_diagnostics else att
 
     def estimate_effect(self):
         logger.info("Estimating attempt-level entry association...")
-        att = self._estimate_att_psm(self.data)
+        att, diagnostics = self._estimate_att_psm(self.data, return_diagnostics=True)
         self.estimate = SimpleNamespace(value=att)
+        self.matching_diagnostics = diagnostics
 
         logger.info(f"Estimated ATT: {self.estimate.value:.4f}")
         logger.info("Computing game-clustered bootstrap CIs...")
@@ -282,8 +305,10 @@ class EntryAttemptImpactModel:
                 'retained_possession_rate': float(self.data['retained_possession'].mean()),
                 'outcome_window_seconds': self.outcome_window_seconds
             },
+            'matching': self.matching_diagnostics,
             'caveats': [
                 "Attempt classification is inferred from play-by-play events and stored possession starts",
+                "Attempt windows may overlap in event-dense sequences until next-entry/stoppage window capping is added",
                 "Failed entries with no PP shot in the outcome window receive zero xG",
                 "Outcome is short-window xG, not full power-play possession value",
                 "Exploratory result; manual video validation is still needed"

@@ -71,7 +71,7 @@ class EntryAttemptImpactModel:
             JOIN games g ON e.game_id = g.game_id
             WHERE e.strength IN ('4v5', '3v5', '3v4', '5v4', '5v3', '4v3')
         ),
-        candidates AS (
+        candidates_raw AS (
             SELECT
                 ec.*,
                 CASE
@@ -104,6 +104,28 @@ class EntryAttemptImpactModel:
                       )
                   )
               )
+        ),
+        candidates AS (
+            SELECT *
+            FROM (
+                SELECT
+                    cr.*,
+                    LAG(cr.period_time_seconds) OVER (
+                        PARTITION BY cr.game_id, cr.pp_team_id, cr.period
+                        ORDER BY cr.event_idx
+                    ) AS prev_candidate_time,
+                    LEAD(cr.event_idx) OVER (
+                        PARTITION BY cr.game_id, cr.pp_team_id, cr.period
+                        ORDER BY cr.event_idx
+                    ) AS next_candidate_event_idx,
+                    LEAD(cr.period_time_seconds) OVER (
+                        PARTITION BY cr.game_id, cr.pp_team_id, cr.period
+                        ORDER BY cr.event_idx
+                    ) AS next_candidate_time
+                FROM candidates_raw cr
+            ) sequenced
+            WHERE prev_candidate_time IS NULL
+               OR period_time_seconds - prev_candidate_time > 5
         )
         SELECT
             c.event_id,
@@ -132,7 +154,12 @@ class EntryAttemptImpactModel:
          AND shot_event.period = c.period
          AND shot_event.event_team_id = c.pp_team_id
          AND shot_event.event_idx >= c.event_idx
-         AND shot_event.period_time_seconds BETWEEN c.period_time_seconds AND c.period_time_seconds + %s
+         AND (
+             c.next_candidate_event_idx IS NULL
+             OR shot_event.event_idx < c.next_candidate_event_idx
+         )
+         AND shot_event.period_time_seconds BETWEEN c.period_time_seconds
+             AND LEAST(c.period_time_seconds + %s, COALESCE(c.next_candidate_time - 1, c.period_time_seconds + %s))
         LEFT JOIN shots s ON s.event_id = shot_event.event_id
         GROUP BY
             c.event_id, c.game_id, c.period, c.period_time_seconds, c.strength,
@@ -141,7 +168,7 @@ class EntryAttemptImpactModel:
         """
 
         logger.info("Fetching PP entry attempt data...")
-        self.data = self.db.query_to_df(query, (self.outcome_window_seconds,))
+        self.data = self.db.query_to_df(query, (self.outcome_window_seconds, self.outcome_window_seconds))
 
         if self.data.empty:
             raise ValueError("No PP entry attempt data available")
@@ -308,7 +335,7 @@ class EntryAttemptImpactModel:
             'matching': self.matching_diagnostics,
             'caveats': [
                 "Attempt classification is inferred from play-by-play events and stored possession starts",
-                "Attempt windows may overlap in event-dense sequences until next-entry/stoppage window capping is added",
+                "Candidate attempts are deduped within five seconds and shot windows stop at the next candidate attempt",
                 "Failed entries with no PP shot in the outcome window receive zero xG",
                 "Outcome is short-window xG, not full power-play possession value",
                 "Exploratory result; manual video validation is still needed"

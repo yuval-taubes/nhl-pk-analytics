@@ -56,6 +56,14 @@ event is oriented correctly. A future validation pass should compare nearest-net
 targeting against period/team attacking direction and document any systematic
 differences.
 
+Run the orientation diagnostic after coordinate or ingestion changes:
+
+```powershell
+cd Analytics
+$env:NHL_DB_PASSWORD = "superuser"
+.\venv\Scripts\python.exe diagnostics\validate_coordinate_orientation.py
+```
+
 ## Current Trust Boundary
 
 Current model pages may use:

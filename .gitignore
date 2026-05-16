@@ -11,6 +11,7 @@ TestResults/
 *.user
 *.userosscache
 *.sln.docstates
+*.lscache
 
 # Local configuration and secrets
 .env

@@ -11,6 +11,9 @@ The project currently has four main pieces:
 
 For a plain-English guide to what the current models say, see `Analytics/README.md`.
 
+For a reviewer-friendly path through the project, see `docs/demo.md`,
+`docs/model_cards.md`, and `docs/validation_status.md`.
+
 The goal is to build toward a full penalty-kill decision-support system: clean event data, reliable possession tracking, shot quality modeling, and eventually tactical breakdown analysis for entries, clears, pressure, net-front defense, and goals against.
 
 ## Repository Layout
@@ -258,6 +261,7 @@ The ingestion app initializes the schema automatically on startup.
 - Move database credentials out of Python `Analytics/config.py` before sharing beyond local development.
 - Keep `docs/coordinate_conventions.md` and `Analytics/reports/latest_manpower_context.md` current after ingestion changes.
 - Add tests around possession splitting, shot possession linking, and xG backfill behavior.
+- Add a golden-game regression test and frontend screenshots before broad outreach.
 
 ## Roadmap
 

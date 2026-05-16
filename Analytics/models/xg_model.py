@@ -196,6 +196,26 @@ class XGModel:
                     'predicted': float(y_pred[mask].mean()),
                     'actual': float(y_test[mask].mean())
                 })
+
+        calibration_bins = []
+        bin_edges = [0.0, 0.02, 0.05, 0.10, 0.20, 1.01]
+        for start, end in zip(bin_edges[:-1], bin_edges[1:]):
+            mask = (y_pred >= start) & (y_pred < end)
+            if mask.sum() == 0:
+                continue
+
+            predicted_goals = float(y_pred[mask].sum())
+            actual_goals = int(y_test[mask].sum())
+            calibration_bins.append({
+                'xg_bin': f"{start:.2f}-{min(end, 1.0):.2f}",
+                'shots': int(mask.sum()),
+                'predicted_goals': predicted_goals,
+                'actual_goals': actual_goals,
+                'difference': float(predicted_goals - actual_goals),
+            })
+
+        predicted_total = float(y_pred.sum())
+        actual_total = int(y_test.sum())
         
         # Feature importance
         logistic = self.model.named_steps['logisticregression']
@@ -209,6 +229,14 @@ class XGModel:
             'goal_rate': float(y.mean()),
             'model_version': self.MODEL_VERSION,
             'calibration': deciles,
+            'calibration_bins': calibration_bins,
+            'predicted_goals_test': predicted_total,
+            'actual_goals_test': actual_total,
+            'goal_calibration_error_pct': (
+                float((predicted_total - actual_total) / actual_total)
+                if actual_total
+                else None
+            ),
             'feature_importance': coefs
         }
         
@@ -346,17 +374,32 @@ class XGModel:
         
         updated = self.db.execute("""
             UPDATE possessions p
-            SET xg_sum = (
-                SELECT COALESCE(SUM(s.xg), 0)
-                FROM shots s
-                WHERE s.possession_id = p.possession_id
-                  AND s.xg IS NOT NULL
-            )
+            SET xg_sum = agg.xg_sum
+            FROM (
+                SELECT possession_id, COALESCE(SUM(xg), 0) AS xg_sum
+                FROM shots
+                WHERE possession_id IS NOT NULL
+                  AND xg IS NOT NULL
+                GROUP BY possession_id
+            ) agg
+            WHERE p.possession_id = agg.possession_id
+        """)
+
+        zeroed = self.db.execute("""
+            UPDATE possessions p
+            SET xg_sum = 0
+            WHERE p.xg_sum IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM shots s
+                  WHERE s.possession_id = p.possession_id
+              )
         """)
         
         logger.info(f"Updated {updated} possessions with xG sums")
+        logger.info(f"Set {zeroed} shotless possessions to zero xG")
         
-        return total_updated, updated
+        return total_updated, updated + zeroed
     
     def save_model(self, path='models/trained/xg_model.joblib'):
         os.makedirs(os.path.dirname(path), exist_ok=True)

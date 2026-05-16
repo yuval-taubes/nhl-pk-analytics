@@ -297,8 +297,8 @@ static JsonArray TopPlayers(JsonNode? model, string metric, bool descending, int
     }
 
     var sorted = descending
-        ? players.OrderByDescending(player => NumberValue(player?[metric]))
-        : players.OrderBy(player => NumberValue(player?[metric]));
+        ? players.OrderByDescending(player => NumberValue(player?[metric]) ?? double.NegativeInfinity)
+        : players.OrderBy(player => NumberValue(player?[metric]) ?? double.PositiveInfinity);
 
     var output = new JsonArray();
     foreach (var player in sorted.Take(count))
@@ -326,11 +326,11 @@ static string StringValue(JsonNode? node)
     }
 }
 
-static double NumberValue(JsonNode? node)
+static double? NumberValue(JsonNode? node)
 {
     if (node is null)
     {
-        return 0;
+        return null;
     }
 
     try
@@ -341,7 +341,7 @@ static double NumberValue(JsonNode? node)
     {
         return double.TryParse(StringValue(node), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
             ? value
-            : 0;
+            : null;
     }
 }
 
@@ -358,7 +358,7 @@ static int IntValue(JsonNode? node)
     }
     catch (InvalidOperationException)
     {
-        return (int)Math.Round(NumberValue(node));
+        return (int)Math.Round(NumberValue(node) ?? 0);
     }
 }
 
@@ -379,12 +379,17 @@ static object? ScalarValue(JsonNode? node)
     }
 }
 
-static string FormatNumber(double value, string format)
+static string FormatNumber(double? value, string format)
 {
-    return value.ToString(format);
+    return value.HasValue ? value.Value.ToString(format) : "N/A";
 }
 
-static string FormatSigned(double value, string format)
+static string FormatSigned(double? value, string format)
 {
-    return value > 0 ? $"+{value.ToString(format)}" : value.ToString(format);
+    if (!value.HasValue)
+    {
+        return "N/A";
+    }
+
+    return value.Value > 0 ? $"+{value.Value.ToString(format)}" : value.Value.ToString(format);
 }

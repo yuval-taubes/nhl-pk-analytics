@@ -1,0 +1,72 @@
+{
+  "summary": {
+    "game_id": 2022020154,
+    "season": "20222023",
+    "game_date": "2022-11-01",
+    "home_team": "EDM",
+    "away_team": "NSH",
+    "events": 386,
+    "shots": 116,
+    "goals": 11,
+    "possessions": 21,
+    "special_teams_possessions": 8,
+    "linked_shots": 31,
+    "shots_with_xg": 116
+  },
+  "strength_counts": [
+    {
+      "strength": "4v5",
+      "events": 60
+    },
+    {
+      "strength": "5v4",
+      "events": 5
+    },
+    {
+      "strength": "5v5",
+      "events": 312
+    },
+    {
+      "strength": "6v4",
+      "events": 3
+    },
+    {
+      "strength": "6v5",
+      "events": 5
+    },
+    {
+      "strength": "EV",
+      "events": 1
+    }
+  ],
+  "possession_counts": [
+    {
+      "strength": "4v5",
+      "entry_type": "CONTROLLED",
+      "possessions": 1,
+      "shots": 2,
+      "goals": 0
+    },
+    {
+      "strength": "4v5",
+      "entry_type": "FACEOFF_START",
+      "possessions": 7,
+      "shots": 10,
+      "goals": 1
+    },
+    {
+      "strength": "5v5",
+      "entry_type": "FACEOFF_START",
+      "possessions": 11,
+      "shots": 15,
+      "goals": 0
+    },
+    {
+      "strength": "5v5",
+      "entry_type": "TURNOVER",
+      "possessions": 2,
+      "shots": 3,
+      "goals": 0
+    }
+  ]
+}

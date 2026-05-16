@@ -33,7 +33,7 @@ Run the diagnostic after ingestion changes:
 
 ```powershell
 cd Analytics
-$env:NHL_DB_PASSWORD = "superuser"
+$env:NHL_DB_PASSWORD = "your_password"
 .\venv\Scripts\python.exe diagnostics\validate_manpower_context.py
 ```
 
@@ -60,7 +60,7 @@ Run the orientation diagnostic after coordinate or ingestion changes:
 
 ```powershell
 cd Analytics
-$env:NHL_DB_PASSWORD = "superuser"
+$env:NHL_DB_PASSWORD = "your_password"
 .\venv\Scripts\python.exe diagnostics\validate_coordinate_orientation.py
 ```
 

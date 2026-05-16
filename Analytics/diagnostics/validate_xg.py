@@ -3,7 +3,12 @@ Validate trained xG model outputs against basic sanity checks.
 """
 
 import logging
+import os
+import sys
+
 import pandas as pd
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from db import DatabaseConnection
 from config import Thresholds

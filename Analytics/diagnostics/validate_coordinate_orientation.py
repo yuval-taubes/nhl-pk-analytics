@@ -70,6 +70,7 @@ def main():
             """
             WITH shot_context AS (
                 SELECT
+                    e.zone,
                     CASE
                         WHEN e.event_team_id = g.home_team_id THEN 189
                         WHEN e.event_team_id = g.away_team_id THEN 11
@@ -88,6 +89,36 @@ def main():
                 COUNT(*) AS total_shots,
                 COUNT(*) FILTER (WHERE home_perspective_target_net <> nearest_net) AS mismatched_shots
             FROM shot_context
+            """
+        )
+
+        zone_breakdown = db.query_to_df(
+            """
+            WITH shot_context AS (
+                SELECT
+                    e.zone,
+                    CASE
+                        WHEN e.event_team_id = g.home_team_id THEN 189
+                        WHEN e.event_team_id = g.away_team_id THEN 11
+                    END AS home_perspective_target_net,
+                    CASE
+                        WHEN ABS(s.x_norm - 11) <= ABS(s.x_norm - 189) THEN 11
+                        ELSE 189
+                    END AS nearest_net
+                FROM shots s
+                JOIN events e ON s.event_id = e.event_id
+                JOIN games g ON e.game_id = g.game_id
+                WHERE s.x_norm IS NOT NULL
+                  AND e.event_team_id IS NOT NULL
+            )
+            SELECT
+                zone,
+                COUNT(*) AS shots,
+                COUNT(*) FILTER (WHERE home_perspective_target_net <> nearest_net) AS mismatches,
+                ROUND(100.0 * COUNT(*) FILTER (WHERE home_perspective_target_net <> nearest_net) / COUNT(*), 2) AS mismatch_pct
+            FROM shot_context
+            GROUP BY zone
+            ORDER BY zone
             """
         )
     finally:
@@ -119,10 +150,17 @@ def main():
             ["shooting_side", "home_perspective_target_net", "nearest_net", "shots"],
         ),
         "",
+        "## Zone Breakdown",
+        "",
+        _markdown_table(
+            zone_breakdown.to_dict("records"),
+            ["zone", "shots", "mismatches", "mismatch_pct"],
+        ),
+        "",
         "## Model Implication",
         "",
-        "The xG model may use nearest-net distance only if this report stays low-mismatch. "
-        "If the mismatch rate is high, coordinate orientation must be fixed or the model must use a different target-net rule.",
+        "A high total mismatch rate means event-team target-net inference and nearest-net shot geometry are not interchangeable. "
+        "If offensive-zone shots stay low-mismatch, nearest-net xG can still be useful for shot danger, but team-relative shot ownership and zone semantics need separate validation.",
         "",
     ]
 

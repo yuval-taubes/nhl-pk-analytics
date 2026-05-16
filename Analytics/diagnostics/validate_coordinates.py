@@ -4,6 +4,11 @@ Checks rink bounds, distance distributions, and coordinate clustering.
 """
 
 import logging
+import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from db import DatabaseConnection
 
 logger = logging.getLogger(__name__)

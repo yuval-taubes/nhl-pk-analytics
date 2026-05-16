@@ -24,6 +24,15 @@ npm ci
 npm run build
 cd ..
 python -m compileall Analytics
+python -m unittest discover -s Analytics/tests
+```
+
+Run the golden-game regression against the local database:
+
+```powershell
+cd .\Analytics
+$env:NHL_DB_PASSWORD = "your_password"
+.\venv\Scripts\python.exe diagnostics\golden_game_regression.py
 ```
 
 Run the API against the latest generated local model artifact:

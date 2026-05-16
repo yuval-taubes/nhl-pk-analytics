@@ -138,7 +138,7 @@ class PkFaceoffModel:
                 return np.nan
             return wins.mean() - losses.mean()
 
-        self.bootstrap_result = bootstrap_ci_by_game(data, "game_id", simple_win_loss_diff, n_bootstrap=500)
+        self.bootstrap_result = bootstrap_ci_by_game(data, "game_id", simple_win_loss_diff, n_bootstrap=200)
 
         outcome_rows = []
         for outcome, group in data.assign(outcome=lambda x: np.where(x["treatment"] == 1, "WIN", "LOSS")).groupby("outcome"):

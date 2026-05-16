@@ -1,9 +1,11 @@
-"""Model 2: PK rush commitment risk-reward."""
+"""Model 2: PK offensive-zone foray risk-reward.
+
+Original requested commitment levels require player coordinates/tracking data.
+This supported version uses possession/event data to estimate the value and
+counterattack risk of PK offensive-zone possessions.
+"""
 
 import logging
-
-import numpy as np
-import pandas as pd
 
 from db import DatabaseConnection
 from models.model_utils import add_timestamp, bootstrap_ci_by_game, export_json
@@ -12,28 +14,30 @@ logger = logging.getLogger(__name__)
 
 
 class PkRushCommitmentModel:
-    """Decision-boundary table for PK offensive-zone rush commitment."""
+    """Risk-reward table for PK offensive-zone forays."""
 
     def __init__(self, db_connection):
         self.db = db_connection
         self.data = None
-        self.results = None
 
     def fetch_data(self):
         query = """
-        WITH pk_possessions AS (
+        WITH pk_oz AS (
             SELECT
-                p.*,
+                p.possession_id,
+                p.game_id,
                 g.season,
-                g.home_team_id,
-                g.away_team_id,
+                p.team_id AS pk_team_id,
+                p.entry_type,
+                p.end_type,
+                p.duration_seconds,
+                p.shot_count,
+                p.goal_count,
+                COALESCE(p.xg_sum, 0) AS pk_xg,
+                p.strength,
                 se.period,
                 se.period_time_seconds AS start_time,
                 ee.period_time_seconds AS end_time,
-                CASE
-                    WHEN split_part(p.strength, 'v', 1)::int < split_part(p.strength, 'v', 2)::int THEN g.away_team_id
-                    WHEN split_part(p.strength, 'v', 2)::int < split_part(p.strength, 'v', 1)::int THEN g.home_team_id
-                END AS pk_team_id,
                 CASE
                     WHEN split_part(p.strength, 'v', 1)::int > split_part(p.strength, 'v', 2)::int THEN g.away_team_id
                     WHEN split_part(p.strength, 'v', 2)::int > split_part(p.strength, 'v', 1)::int THEN g.home_team_id
@@ -41,7 +45,7 @@ class PkRushCommitmentModel:
                 CASE
                     WHEN p.team_id = g.home_team_id THEN g.home_score - g.away_score
                     ELSE g.away_score - g.home_score
-                END AS score_diff
+                END AS pk_score_diff
             FROM possessions p
             JOIN games g ON p.game_id = g.game_id
             JOIN events se ON p.start_event_id = se.event_id
@@ -53,70 +57,34 @@ class PkRushCommitmentModel:
                     WHEN split_part(p.strength, 'v', 2)::int < split_part(p.strength, 'v', 1)::int THEN g.home_team_id
               END
         ),
-        commitment AS (
-            SELECT
-                p.possession_id,
-                MAX(player_counts.pk_player_count) AS pk_players_seen_in_oz
-            FROM pk_possessions p
-            JOIN events e
-              ON e.game_id = p.game_id
-             AND e.event_idx BETWEEN (
-                    SELECT event_idx FROM events WHERE event_id = p.start_event_id
-                 ) AND (
-                    SELECT event_idx FROM events WHERE event_id = p.end_event_id
-                 )
-            LEFT JOIN LATERAL (
-                SELECT COUNT(DISTINCT ep.player_id) AS pk_player_count
-                FROM event_players ep
-                WHERE ep.event_id = e.event_id
-                  AND ep.team_id = p.pk_team_id
-                  AND (
-                      (p.pk_team_id = p.home_team_id AND e.x_norm >= 125)
-                      OR (p.pk_team_id = p.away_team_id AND e.x_norm <= 75)
-                  )
-            ) player_counts ON TRUE
-            GROUP BY p.possession_id
-        ),
-        next_pp AS (
+        counter AS (
             SELECT DISTINCT ON (p.possession_id)
                 p.possession_id,
-                np.possession_id AS counter_possession_id,
-                np.xg_sum AS counter_xg
-            FROM pk_possessions p
-            JOIN events pe ON p.end_event_id = pe.event_id
-            JOIN possessions np ON np.game_id = p.game_id
-            JOIN events ns ON np.start_event_id = ns.event_id
-            WHERE np.team_id = p.pp_team_id
-              AND np.possession_id <> p.possession_id
-              AND ns.period = pe.period
-              AND ns.period_time_seconds > pe.period_time_seconds
-              AND ns.period_time_seconds <= pe.period_time_seconds + 30
-              AND p.end_type <> 'GOAL'
+                COALESCE(np.xg_sum, 0) AS counter_xg
+            FROM pk_oz p
+            JOIN events pe ON pe.game_id = p.game_id AND pe.period = p.period AND pe.period_time_seconds = p.end_time
+            JOIN possessions np ON np.game_id = p.game_id AND np.team_id = p.pp_team_id
+            JOIN events ns ON ns.event_id = np.start_event_id
+            WHERE p.end_type <> 'GOAL'
+              AND ns.period = p.period
+              AND ns.period_time_seconds > p.end_time
+              AND ns.period_time_seconds <= p.end_time + 30
             ORDER BY p.possession_id, ns.period_time_seconds
         )
         SELECT
-            p.possession_id,
-            p.game_id,
-            p.season,
-            p.team_id AS pk_team_id,
-            p.strength,
-            p.period,
-            p.start_time,
-            p.duration_seconds,
-            p.shot_count,
-            p.goal_count,
-            COALESCE(p.xg_sum, 0) AS pk_xg,
-            COALESCE(n.counter_xg, 0) AS counter_xg_against,
-            COALESCE(c.pk_players_seen_in_oz, 1) AS pk_players_seen_in_oz,
+            p.*,
+            COALESCE(c.counter_xg, 0) AS counter_xg_against,
             CASE
-                WHEN COALESCE(c.pk_players_seen_in_oz, 1) <= 1 THEN 0
-                WHEN COALESCE(c.pk_players_seen_in_oz, 1) = 2 THEN 1
-                ELSE 2
-            END AS commitment_level,
+                WHEN p.entry_type = 'CONTROLLED' THEN 'controlled_foray'
+                WHEN p.entry_type = 'DUMP_IN' THEN 'dump_in_foray'
+                WHEN p.entry_type = 'TURNOVER' THEN 'turnover_foray'
+                WHEN p.entry_type = 'FACEOFF_START' THEN 'oz_faceoff_foray'
+                ELSE 'other_foray'
+            END AS foray_type,
             CASE
-                WHEN p.score_diff <= -2 THEN 'trailing_2_plus'
-                WHEN p.score_diff = -1 THEN 'trailing_1'
-                WHEN p.score_diff = 0 THEN 'tied'
+                WHEN p.pk_score_diff <= -2 THEN 'trailing_2_plus'
+                WHEN p.pk_score_diff = -1 THEN 'trailing_1'
+                WHEN p.pk_score_diff = 0 THEN 'tied'
                 ELSE 'leading'
             END AS score_state,
             CASE
@@ -124,90 +92,64 @@ class PkRushCommitmentModel:
                 WHEN p.period = 3 THEN 'third'
                 ELSE 'early_game'
             END AS game_phase
-        FROM pk_possessions p
-        LEFT JOIN commitment c ON c.possession_id = p.possession_id
-        LEFT JOIN next_pp n ON n.possession_id = p.possession_id
+        FROM pk_oz p
+        LEFT JOIN counter c ON c.possession_id = p.possession_id
         """
-        logger.info("Fetching PK rush commitment data...")
+        logger.info("Fetching PK OZ foray data...")
         self.data = self.db.query_to_df(query)
-        logger.info("Model 2 sample: %s PK OZ possessions", len(self.data))
+        logger.info("Model 2 sample: %s PK OZ forays", len(self.data))
         return self.data
 
     @staticmethod
-    def _summarize_group(df):
-        if df.empty:
-            return {}
+    def _summary(group):
         return {
-            "n": int(len(df)),
-            "avg_pk_xg_benefit": float(df["pk_xg"].mean()),
-            "avg_counter_xg_risk": float(df["counter_xg_against"].mean()),
-            "net_xg": float(df["pk_xg"].mean() - df["counter_xg_against"].mean()),
-            "counterattack_rate": float((df["counter_xg_against"] > 0).mean()),
-            "avg_duration_seconds": float(df["duration_seconds"].astype(float).mean()),
+            "n": int(len(group)),
+            "avg_pk_xg_benefit": float(group["pk_xg"].astype(float).mean()),
+            "avg_counter_xg_risk": float(group["counter_xg_against"].astype(float).mean()),
+            "net_xg": float((group["pk_xg"].astype(float) - group["counter_xg_against"].astype(float)).mean()),
+            "counterattack_rate": float((group["counter_xg_against"].astype(float) > 0).mean()),
+            "shot_rate": float((group["shot_count"].astype(float) > 0).mean()),
         }
 
     def run(self):
         logger.info("=" * 60)
-        logger.info("MODEL 2: PK Rush Commitment Risk-Reward")
+        logger.info("MODEL 2: PK Offensive-Zone Foray Risk-Reward")
         logger.info("=" * 60)
         data = self.fetch_data()
 
-        level_rows = []
-        for level, group in data.groupby("commitment_level"):
-            row = {"commitment_level": int(level), **self._summarize_group(group)}
-            ci = bootstrap_ci_by_game(
+        by_type = []
+        for foray_type, group in data.groupby("foray_type"):
+            row = {"foray_type": foray_type, **self._summary(group)}
+            row["net_xg_ci"] = bootstrap_ci_by_game(
                 group,
                 "game_id",
-                lambda x: x["pk_xg"].astype(float).mean() - x["counter_xg_against"].astype(float).mean(),
-                n_bootstrap=500,
+                lambda x: (x["pk_xg"].astype(float) - x["counter_xg_against"].astype(float)).mean(),
+                n_bootstrap=200,
             )
-            row["net_xg_ci"] = ci
-            level_rows.append(row)
+            by_type.append(row)
 
         strata = []
-        for keys, group in data.groupby(["score_state", "game_phase", "commitment_level"]):
-            score_state, game_phase, level = keys
-            strata.append(
-                {
-                    "score_state": score_state,
-                    "game_phase": game_phase,
-                    "commitment_level": int(level),
-                    **self._summarize_group(group),
-                }
-            )
+        for keys, group in data.groupby(["score_state", "game_phase", "foray_type"]):
+            score_state, game_phase, foray_type = keys
+            strata.append({"score_state": score_state, "game_phase": game_phase, "foray_type": foray_type, **self._summary(group)})
 
-        levels = sorted(level_rows, key=lambda x: x["commitment_level"])
-        marginal = []
-        for prev, curr in zip(levels, levels[1:]):
-            marginal.append(
-                {
-                    "from_level": prev["commitment_level"],
-                    "to_level": curr["commitment_level"],
-                    "marginal_pk_xg": curr["avg_pk_xg_benefit"] - prev["avg_pk_xg_benefit"],
-                    "marginal_counter_xg": curr["avg_counter_xg_risk"] - prev["avg_counter_xg_risk"],
-                    "marginal_net": curr["net_xg"] - prev["net_xg"],
-                }
-            )
-
-        self.results = add_timestamp(
+        results = add_timestamp(
             {
-                "model": "PK Rush Commitment Risk-Reward",
-                "summary_by_commitment_level": level_rows,
-                "marginal_curve": marginal,
+                "model": "PK Offensive-Zone Foray Risk-Reward",
+                "summary_by_foray_type": by_type,
                 "stratified_summary": strata,
-                "sample": {"n_possessions": int(len(data))},
+                "sample": {"n_forays": int(len(data))},
                 "caveats": [
-                    "Commitment uses on-ice player linkage at event locations, not tracking-data player coordinates",
-                    "The x_norm threshold is a blue-line approximation in normalized coordinates",
-                    "Counterattack tracking only catches the immediate next opponent possession within 30 seconds",
+                    "Original player-commitment levels require tracking/player coordinate data and are not estimated here",
+                    "Counterattack risk only captures the next PP possession within 30 seconds",
                     "Goalie-pulled situations are not separately excluded",
-                    "This is descriptive decision-boundary analysis, not a causal estimate",
+                    "This is descriptive decision support, not causal inference",
                 ],
             }
         )
-        self.results["output_file"] = export_json(self.results, "model2_pk_rush_commitment.json")
-        logger.info("Model 2 output: %s", self.results["output_file"])
-        return self.results
+        results["output_file"] = export_json(results, "model2_pk_foray_risk_reward.json")
+        logger.info("Model 2 output: %s", results["output_file"])
+        return results
 
 
 if __name__ == "__main__":

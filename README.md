@@ -2,11 +2,14 @@
 
 An analytics project for studying NHL penalty-kill performance from play-by-play data.
 
-The project currently has three main pieces:
+The project currently has four main pieces:
 
 - `NhlPkIngest`: a .NET 8 console app that ingests NHL play-by-play data into PostgreSQL.
 - `Analytics`: a Python analytics layer for data validation, xG modeling, and tactical penalty-kill model experiments.
-- `Frontend`: a React + TypeScript + Bootstrap analyst workstation shell.
+- `NhlPkApi`: an ASP.NET minimal API that serves the latest analytics model outputs to the web app.
+- `Frontend`: a React + TypeScript model-story site with a visual landing page and one page per model.
+
+For a plain-English guide to what the current models say, see `Analytics/README.md`.
 
 The goal is to build toward a full penalty-kill decision-support system: clean event data, reliable possession tracking, shot quality modeling, and eventually tactical breakdown analysis for entries, clears, pressure, net-front defense, and goals against.
 
@@ -15,7 +18,8 @@ The goal is to build toward a full penalty-kill decision-support system: clean e
 ```text
 Data_ingestion/
 |-- Analytics/              Python diagnostics and modeling
-|-- Frontend/               React/TypeScript dashboard shell
+|-- Frontend/               React/TypeScript model-story site
+|-- NhlPkApi/               ASP.NET API over analytics outputs
 |-- NhlPkIngest/            .NET ingestion console app
 |-- Data_ingestion.sln      Visual Studio solution
 |-- README.md               Project overview
@@ -35,6 +39,7 @@ Implemented:
 - Game reprocessing support so ingestion fixes can be applied by rerunning games.
 - Analytics diagnostics for coordinate quality, join inflation, possession quality, and xG data quality.
 - Early xG and blue-line denial modeling code.
+- API endpoints that expose the latest Models 2-10 JSON outputs to the frontend.
 
 In progress:
 
@@ -53,11 +58,11 @@ NHL API
   -> PostgreSQL schema
   -> Analytics diagnostics
   -> xG / tactical models
-  -> ASP.NET API (planned)
-  -> Frontend dashboard
+  -> NhlPkApi
+  -> Frontend model-story site
 ```
 
-The ingestion app owns database population. The Python layer assumes PostgreSQL is already populated and focuses on diagnostics, modeling, and research workflows. The frontend is currently a Bootstrap-based React shell with mock data while the API layer is designed.
+The ingestion app owns database population. The Python layer assumes PostgreSQL is already populated and focuses on diagnostics, modeling, and research workflows. The API currently reads the latest generated analytics JSON from `Analytics/models/output/` and shapes it for the frontend.
 
 ## Prerequisites
 
@@ -204,7 +209,7 @@ npm run build
 npm run lint
 ```
 
-The frontend is React + TypeScript + Bootstrap. It currently uses mock dashboard data and expects the future API at `http://localhost:5080/api` unless `VITE_API_BASE_URL` is set.
+The frontend is React + TypeScript + Bootstrap. It reads the model-story payload from `http://localhost:5080/api` by default and falls back to local sample data if the API is unavailable.
 
 ## Diagnostics Notes
 
@@ -268,10 +273,10 @@ Medium term:
 - Add goal-against sequence mining.
 - Cluster recurring PK breakdown patterns.
 - Build model reports for entry denial, clear failures, shot suppression, and net-front defense.
-- Add an API layer for serving model outputs.
+- Expand the API layer beyond latest-run JSON into filterable database-backed reports.
 
 Long term:
 
-- Build a web dashboard for team, player, and tactical review.
+- Expand the web app for team, player, and tactical review.
 - Support manual tactical labels from video review.
 - Add richer causal and sequence modeling once the base data is stable.

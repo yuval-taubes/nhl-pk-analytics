@@ -16,7 +16,7 @@ from models.model7_defense_gap_control import DefenseGapControlModel
 from models.model8_forward_shot_suppression import ForwardShotSuppressionModel
 from models.model9_center_faceoff_value import CenterFaceoffValueModel
 from models.model10_net_front_defense import NetFrontDefenseModel
-from models.model_utils import json_safe
+from models.model_utils import ensure_player_scouting_table, json_safe
 
 
 logger = logging.getLogger(__name__)
@@ -24,15 +24,32 @@ logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = [
     PkRushCommitmentModel,
+    IntentionalClearanceFaceoffModel,
     PkForecheckStructureModel,
     PkFaceoffModel,
-    IntentionalClearanceFaceoffModel,
     ForwardForecheckingModel,
     DefenseGapControlModel,
     ForwardShotSuppressionModel,
     CenterFaceoffValueModel,
     NetFrontDefenseModel,
 ]
+
+
+STALE_SCOUTING_MODEL_NAMES = [
+    "model6_forward_forechecking",
+    "model7_defense_gap_control",
+    "model8_forward_shot_suppression",
+    "model10_net_front_defense",
+]
+
+
+def clean_stale_scouting_rows(db):
+    """Remove rows produced by earlier unsupported on-ice scouting models."""
+    ensure_player_scouting_table(db)
+    for model_name in STALE_SCOUTING_MODEL_NAMES:
+        deleted = db.execute("DELETE FROM player_scouting WHERE model_name = %s", (model_name,))
+        if deleted:
+            logger.info("Removed %s stale player_scouting rows for %s", deleted, model_name)
 
 
 def main():
@@ -43,6 +60,8 @@ def main():
     results = {}
 
     try:
+        clean_stale_scouting_rows(db)
+
         for model_cls in MODEL_CLASSES:
             model = model_cls(db)
             name = model_cls.__name__

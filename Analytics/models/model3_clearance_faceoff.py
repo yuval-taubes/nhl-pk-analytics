@@ -160,7 +160,7 @@ class IntentionalClearanceFaceoffModel:
                 group,
                 "game_id",
                 lambda x: (x["pk_xg_20"].astype(float) - x["pp_xg_20"].astype(float)).mean(),
-                n_bootstrap=500,
+                n_bootstrap=200,
             )
             rows.append(
                 {

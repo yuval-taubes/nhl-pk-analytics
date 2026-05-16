@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def metric_ci(data, metric_func):
-    return bootstrap_ci_by_game(data, "game_id", metric_func, n_bootstrap=500)
+    return bootstrap_ci_by_game(data, "game_id", metric_func, n_bootstrap=25)
 
 
 def build_metric_rows(summary, model_name, season, metric_configs):

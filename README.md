@@ -1,8 +1,26 @@
 # NHL Penalty Kill Analytics
 
-An analytics project for studying NHL penalty-kill performance from play-by-play data.
+An end-to-end NHL penalty-kill analytics system built from public play-by-play:
+.NET ingestion, PostgreSQL storage, Python validation/modeling, an ASP.NET API,
+and a React model-story site.
 
-The project currently has four main pieces:
+**Live frontend:** https://yuval-taubes.github.io/nhl-pk-analytics/
+
+The strongest current hockey finding is that defensive-zone PK faceoff wins
+sharply reduce immediate xGA in the next 20 seconds. Entry-impact and
+player-profile models remain deliberately framed as exploratory/descriptive
+until more validation is complete.
+
+## What This Demonstrates
+
+- Ingesting public NHL play-by-play with a .NET pipeline.
+- Designing a PostgreSQL schema for games, events, shots, possessions, and players.
+- Validating coordinate, manpower, possession, and join assumptions.
+- Producing descriptive penalty-kill model outputs in Python.
+- Serving model artifacts through an ASP.NET API.
+- Publishing an interactive React frontend with a committed real-data snapshot.
+
+The project has four main pieces:
 
 - `NhlPkIngest`: a .NET 8 console app that ingests NHL play-by-play data into PostgreSQL.
 - `Analytics`: a Python analytics layer for data validation, xG modeling, and tactical penalty-kill model experiments.
@@ -14,7 +32,8 @@ For a plain-English guide to what the current models say, see `Analytics/README.
 For a reviewer-friendly path through the project, see `docs/demo.md`,
 `docs/model_cards.md`, and `docs/validation_status.md`.
 
-The goal is to build toward a full penalty-kill decision-support system: clean event data, reliable possession tracking, shot quality modeling, and eventually tactical breakdown analysis for entries, clears, pressure, net-front defense, and goals against.
+The 1.0 goal is not to claim every hockey question is solved. It is to make the
+pipeline, strongest findings, and known trust boundaries easy to inspect.
 
 ## Repository Layout
 
@@ -29,7 +48,7 @@ Data_ingestion/
 `-- .gitignore              Repo-level ignore rules
 ```
 
-## Current Status
+## 1.0 Status
 
 Implemented:
 
@@ -43,6 +62,9 @@ Implemented:
 - Analytics diagnostics for coordinate quality, join inflation, possession quality, and xG data quality.
 - Early xG and blue-line denial modeling code.
 - API endpoints that expose the latest Models 2-10 JSON outputs to the frontend.
+- GitHub Actions CI for .NET, frontend, and Python compile checks.
+- GitHub Pages deployment for the interactive frontend.
+- Static real-data frontend snapshot at `Frontend/public/data/dashboard.json`.
 
 In progress:
 
@@ -212,7 +234,10 @@ npm run build
 npm run lint
 ```
 
-The frontend is React + TypeScript + Bootstrap. It reads the model-story payload from `http://localhost:5080/api` by default and falls back to local sample data if the API is unavailable.
+The frontend is React + TypeScript. It reads the model-story payload from
+`http://localhost:5080/api` by default. If the API is unavailable, it loads the
+committed real-data snapshot from `Frontend/public/data/dashboard.json`; only if
+both fail does it use the small built-in fallback sample.
 
 ## Diagnostics Notes
 
@@ -253,7 +278,7 @@ The ingestion app initializes the schema automatically on startup.
 - If ingestion logic changes, reprocess games so derived tables like `possessions` and `shots` reflect the new logic.
 - If analytics joins touch player-level tables, check for join inflation before trusting model results.
 
-## Known Issues / Next Work
+## 1.0 Trust Gaps / Next Work
 
 - Address the nullable warning in `PossessionTracker`.
 - Re-ingest data after the possession-boundary fix, then rerun possession validation.

@@ -4,15 +4,17 @@ React + TypeScript model-story site for the NHL penalty kill analytics project.
 
 This app is intentionally shaped like an interactive hockey research publication rather than a conventional dashboard: a visual landing page, one page per model, scouting summaries, and a clear data-honesty section.
 
+Published site:
+
+```text
+https://yuval-taubes.github.io/nhl-pk-analytics/
+```
+
 ## Stack
 
 - Vite
 - React
 - TypeScript
-- Bootstrap 5
-- React-Bootstrap
-- Recharts
-- React Flow
 - Lucide React
 
 ## Local Development
@@ -76,8 +78,10 @@ npm run dev
 - Model index at `#/models`
 - Individual model pages at `#/models/{modelNumber}`
 - Scouting profiles at `#/scouting`
+- About/project pipeline page at `#/about`
 - Data honesty page at `#/data-honesty`
 - Live model takeaways, tactical rows, and player leaders from `GET /api/analytics/dashboard`
+- Published real-data snapshot from `public/data/dashboard.json` when the API is offline
 
 ## Design Direction
 

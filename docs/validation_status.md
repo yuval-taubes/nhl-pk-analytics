@@ -1,6 +1,6 @@
 # Validation Status
 
-Last updated: 2026-05-16
+Last updated: 2026-05-21
 
 This file is the project trust ledger. It separates checks that currently have
 machine-readable support from checks that still need manual or regression-test
@@ -11,6 +11,8 @@ coverage.
 | Component | Status | Evidence |
 | --- | --- | --- |
 | CI build | Passing by workflow definition | `.github/workflows/ci.yml` builds .NET, frontend, and compiles Python |
+| Published frontend | Configured | `.github/workflows/deploy-frontend.yml` deploys `Frontend/dist` to GitHub Pages |
+| Real-data static demo | Added | `Frontend/public/data/dashboard.json` is committed and copied into the static build |
 | Manpower convention | Checked locally | `Analytics/reports/latest_manpower_context.md` |
 | Latest validation summary | Added | `Analytics/reports/latest_validation_summary.md` |
 | Strength mapping | Documented | `docs/coordinate_conventions.md` |
@@ -31,7 +33,7 @@ coverage.
 | Coordinate orientation | Investigate event-team/zone semantics; latest report is `REVIEW`, not a pass |
 | Entry-attempt labels | Manually review a sample of inferred attempts |
 | Player-level joins | Add event-level dedupe bases where join diagnostics still inflate rows |
-| Demo assets | Add screenshots or a short demo video before outreach |
+| Demo assets | Interactive GitHub Pages demo is configured; screenshots/video are optional polish |
 
 ## External Reader Summary
 

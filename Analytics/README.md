@@ -1,6 +1,6 @@
 # Analytics Model Guide
 
-Last updated: 2026-05-15
+Last updated: 2026-05-21
 
 This folder is the research layer for the penalty-kill project. It turns the ingested NHL play-by-play database into descriptive PK models, scouting tables, and JSON outputs for downstream analysis.
 
@@ -11,6 +11,10 @@ models/output/models_2_10_run_20260515_152705.json
 ```
 
 Generated files under `models/output/` are ignored by Git because they are local run artifacts. The code and the interpretation below are the durable project documentation.
+
+The published frontend uses a committed snapshot of this run at
+`Frontend/public/data/dashboard.json`, so reviewers can inspect the model-story
+site without recreating the local database.
 
 ## What The Data Can Support
 

@@ -7,11 +7,15 @@ to understand the work.
 
 ## What To Look At First
 
-1. Root project overview: `README.md`
-2. Model capability boundaries: `Analytics/README.md`
-3. Coordinate and manpower conventions: `docs/coordinate_conventions.md`
+1. Live frontend: https://yuval-taubes.github.io/nhl-pk-analytics/
+2. Root project overview: `README.md`
+3. Model capability boundaries: `Analytics/README.md`
 4. Current validation status: `docs/validation_status.md`
-5. Frontend sample payload: `Frontend/public/data/dashboard.json`
+5. Model cards: `docs/model_cards.md`
+6. Frontend real-data snapshot: `Frontend/public/data/dashboard.json`
+
+The live frontend is deployed by GitHub Actions. In repository settings, GitHub
+Pages should use **GitHub Actions** as the source.
 
 ## Local Demo Commands
 
@@ -47,8 +51,9 @@ Run the frontend:
 .\start-frontend.ps1
 ```
 
-The frontend has a sample-data fallback, so the UI remains inspectable even when
-the API or database is unavailable.
+The published frontend uses `Frontend/public/data/dashboard.json`, which is a
+committed snapshot generated from the real API/model output. That keeps the demo
+interactive even when the local database and API are off.
 
 ## Current Headline Claim
 

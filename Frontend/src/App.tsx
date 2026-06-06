@@ -27,6 +27,7 @@ import {
 } from './data/dashboard'
 
 type ApiState = 'loading' | 'live' | 'snapshot' | 'fallback'
+const SNAPSHOT_CACHE_KEY = 'moneypuck-v2-20260605-152014'
 type RouteName = 'home' | 'models' | 'model' | 'scouting' | 'about' | 'honesty'
 
 type AppRoute = {
@@ -343,7 +344,10 @@ function App() {
       .catch(async (error: unknown) => {
         if (controller.signal.aborted) return
         try {
-          const snapshot = await fetch(`${import.meta.env.BASE_URL}data/dashboard.json`, {
+          const snapshotUrl = new URL(`${import.meta.env.BASE_URL}data/dashboard.json`, window.location.href)
+          snapshotUrl.searchParams.set('v', SNAPSHOT_CACHE_KEY)
+          const snapshot = await fetch(snapshotUrl, {
+            cache: 'no-store',
             headers: { Accept: 'application/json' },
             signal: controller.signal,
           })
@@ -404,7 +408,7 @@ function SiteHeader({ apiState, route }: { apiState: ApiState; route: AppRoute }
         ))}
       </nav>
       <div className={`api-pill api-pill-${apiState}`}>
-        {apiState === 'live' ? 'Live models' : apiState === 'snapshot' ? 'Snapshot models' : apiState === 'loading' ? 'Syncing' : 'API offline'}
+        {apiState === 'live' ? 'Live models' : apiState === 'snapshot' ? 'MoneyPuck v2 snapshot' : apiState === 'loading' ? 'Syncing' : 'API offline'}
       </div>
     </header>
   )

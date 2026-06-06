@@ -191,9 +191,202 @@ app.MapGet("/api/analytics/dashboard", (IConfiguration config, IWebHostEnvironme
     });
 });
 
+app.MapGet("/api/analytics/v2/latest-run", (IConfiguration config, IWebHostEnvironment env) =>
+{
+    var result = TryLoadLatestV2Run(config, env);
+    return result.Run is null
+        ? Results.NotFound(new { error = result.Error })
+        : Results.Json(result.Run);
+});
+
+app.MapGet("/api/analytics/v2/models", (IConfiguration config, IWebHostEnvironment env) =>
+{
+    var result = TryLoadLatestV2Run(config, env);
+    if (result.Run is null)
+    {
+        return Results.NotFound(new { error = result.Error });
+    }
+
+    var models = result.Run["models"]?.AsObject()
+        .Select(model => ToModelCard(model.Key, model.Value))
+        .ToArray() ?? [];
+
+    return Results.Ok(new
+    {
+        version = StringValue(result.Run["version"]),
+        source = result.Run["source"],
+        startedAt = StringValue(result.Run["started_at"]),
+        completedAt = StringValue(result.Run["completed_at"]),
+        models,
+    });
+});
+
+app.MapGet("/api/analytics/v2/models/{modelKey}", (string modelKey, IConfiguration config, IWebHostEnvironment env) =>
+{
+    var result = TryLoadLatestV2Run(config, env);
+    if (result.Run is null)
+    {
+        return Results.NotFound(new { error = result.Error });
+    }
+
+    var model = FindV2Model(result.Run, modelKey);
+    return model is null
+        ? Results.NotFound(new { error = $"V2 model {modelKey} was not found in the latest analytics run." })
+        : Results.Json(model);
+});
+
+app.MapGet("/api/analytics/v2/dashboard", (IConfiguration config, IWebHostEnvironment env) =>
+{
+    var result = TryLoadLatestV2Run(config, env);
+    if (result.Run is null)
+    {
+        return Results.NotFound(new { error = result.Error });
+    }
+
+    var run = result.Run;
+    var movement = FindV2Model(run, "PuckMovementGeometryModel");
+    var aftershock = FindV2Model(run, "BlockedShotAftershockModel");
+    var goalie = FindV2Model(run, "GoalieControlAboveExpectedModel");
+    var fatigue = FindV2Model(run, "PkFatigueTimingModel");
+    var twoWay = FindV2Model(run, "ShortHandedTwoWayValueModel");
+    var bayesian = FindV2Model(run, "BayesianPkPlayerEvaluationModel");
+    var rushSet = FindV2Model(run, "RushSetDefenseModel");
+
+    var reboundBucket = FindByString(movement?["bucket_summary"], "movement_bucket", "rebound");
+    var northSouthBucket = FindByString(movement?["bucket_summary"], "movement_bucket", "north_south_downhill");
+    var blockLeague = aftershock?["league"];
+    var rushSample = IntValue(rushSet?["sample"]?["rush_flagged_shots"]);
+
+    return Results.Ok(new
+    {
+        latestRun = new
+        {
+            startedAt = StringValue(run["started_at"]),
+            completedAt = StringValue(run["completed_at"]),
+            fileName = Path.GetFileName(result.Path),
+        },
+        version = StringValue(run["version"]),
+        source = run["source"],
+        metrics = new[]
+        {
+            new
+            {
+                label = "PK Shots Against",
+                value = IntValue(movement?["sample"]?["pk_shots_against"]).ToString("N0"),
+                delta = "MoneyPuck v2",
+                intent = "flat",
+                helper = "Validated special-teams shot sample",
+            },
+            new
+            {
+                label = "Rebound Avg xG",
+                value = FormatNumber(NumberValue(reboundBucket?["avg_xg"]), "0.000"),
+                delta = "movement",
+                intent = "down",
+                helper = "Highest-danger movement bucket",
+            },
+            new
+            {
+                label = "North-South xG",
+                value = FormatNumber(NumberValue(northSouthBucket?["avg_xg"]), "0.000"),
+                delta = "downhill",
+                intent = "down",
+                helper = "Downhill pressure into the slot",
+            },
+            new
+            {
+                label = "After-Block Shots",
+                value = IntValue(blockLeague?["after_block_shots"]).ToString("N0"),
+                delta = "pressure",
+                intent = "flat",
+                helper = "Shots after failed block clearances",
+            },
+            new
+            {
+                label = "Rush Sample",
+                value = rushSample.ToString("N0"),
+                delta = "diagnostic",
+                intent = "flat",
+                helper = "Sparse MoneyPuck rush flag",
+            },
+        },
+        takeaways = new[]
+        {
+            new
+            {
+                title = "Rebounds are the clearest second-chance danger",
+                value = FormatNumber(NumberValue(reboundBucket?["avg_xg"]), "0.000"),
+                detail = "Rebound shots had the highest average danger. The first save or block did not finish the play.",
+                tone = "bad",
+            },
+            new
+            {
+                title = "A block only helps if the PK wins the next puck",
+                value = FormatNumber(NumberValue(blockLeague?["league_avg_xg_after_block"]), "0.000"),
+                detail = "This measures the next recorded shot after a blocked attempt, where failed recoveries still become chances.",
+                tone = "warn",
+            },
+            new
+            {
+                title = "Goalie control is the save and the next play",
+                value = "v2",
+                detail = "The goalie model looks at goals saved, rebounds, freezes, and whether the puck stays dangerous.",
+                tone = "good",
+            },
+        },
+        forayRows = new JsonArray(),
+        entryRows = new JsonArray(),
+        faceoffRows = new JsonArray(),
+        playerLeaders = new
+        {
+            forwards = new JsonArray(),
+            defensemen = new JsonArray(),
+            centers = new JsonArray(),
+            shotBlockers = new JsonArray(),
+        },
+        movementRows = movement?["bucket_summary"] ?? new JsonArray(),
+        aftershockTeams = TakeArray(aftershock?["highest_aftershock_teams"], 8),
+        goalieControl = TakeTopPerSeason(goalie?["goalies"], "control_score", descending: true, count: 8),
+        reboundLeakWatch = TakeTopPerSeason(goalie?["goalies"], "rebounds_allowed_above_expected_per100", descending: true, count: 8),
+        fatigueRows = fatigue?["defending_average_toi"] ?? new JsonArray(),
+        penaltyTimingRows = fatigue?["penalty_elapsed"] ?? new JsonArray(),
+        twoWayLeaders = TakeTopPerSeason(twoWay?["players"], "two_way_net_xg_per60", descending: true, count: 12),
+        offenseWithoutLeakage = TakeTopPerSeason(
+            twoWay?["players"],
+            "two_way_net_xg_per60",
+            descending: true,
+            count: 12,
+            predicate: player => NumberValue(player?["offense_percentile"]) >= 70 && NumberValue(player?["defense_percentile"]) >= 45),
+        trustedPkImpact = TakeTopPerSeason(bayesian?["trusted_pk_impact"], "true_talent_pk_impact_per60", descending: true, count: 12),
+        highUpsideNoisy = TakeTopPerSeason(bayesian?["high_upside_noisy"], "true_talent_pk_impact_per60", descending: true, count: 12),
+        playerSimilarityGroups = TakeTopPerSeason(bayesian?["similarity_groups"], "true_talent_pk_impact_per60", descending: true, count: 6),
+        scoutingSeasons = BuildSeasonArray(twoWay?["seasons"], goalie?["seasons"], bayesian?["seasons"]),
+        rushSetSummary = rushSet?["summary"] ?? new JsonArray(),
+        modelCards = run["models"]?.AsObject()
+            .Select(model => ToModelCard(model.Key, model.Value))
+            .ToArray() ?? [],
+        caveats = new[]
+        {
+            "MoneyPuck is the source for v2 shot quality and outcome probabilities; credit MoneyPuck.com.",
+            "V2 movement buckets are derived from shot and last-event coordinates, not player tracking.",
+            "Old NHL API models remain available as legacy context but are no longer the primary analytics layer.",
+        },
+    });
+});
+
 app.Run();
 
 static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRun(IConfiguration config, IWebHostEnvironment env)
+{
+    return TryLoadLatestRunPattern(config, env, "models_2_10_run_*.json");
+}
+
+static (JsonNode? Run, string? Path, string? Error) TryLoadLatestV2Run(IConfiguration config, IWebHostEnvironment env)
+{
+    return TryLoadLatestRunPattern(config, env, "models_v2_run_*.json");
+}
+
+static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRunPattern(IConfiguration config, IWebHostEnvironment env, string filePattern)
 {
     var configuredPath = config["AnalyticsOutputPath"];
     var outputPath = BuildOutputPathCandidates(configuredPath, env.ContentRootPath)
@@ -205,14 +398,14 @@ static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRun(IConfigurat
     }
 
     var latest = Directory
-        .EnumerateFiles(outputPath, "models_2_10_run_*.json")
+        .EnumerateFiles(outputPath, filePattern)
         .Select(path => new FileInfo(path))
         .OrderByDescending(file => file.LastWriteTimeUtc)
         .FirstOrDefault();
 
     if (latest is null)
     {
-        return (null, null, $"No combined analytics run files were found in {outputPath}.");
+        return (null, null, $"No combined analytics run files matching {filePattern} were found in {outputPath}.");
     }
 
     using var stream = latest.OpenRead();
@@ -252,6 +445,19 @@ static JsonNode? FindModel(JsonNode run, int modelNumber)
         .Value;
 }
 
+static JsonNode? FindV2Model(JsonNode run, string modelKey)
+{
+    var models = run["models"]?.AsObject();
+    if (models is null)
+    {
+        return null;
+    }
+
+    return models
+        .FirstOrDefault(model => string.Equals(model.Key, modelKey, StringComparison.OrdinalIgnoreCase))
+        .Value;
+}
+
 static string ModelKey(int modelNumber) => modelNumber switch
 {
     2 => "PkRushCommitmentModel",
@@ -265,6 +471,88 @@ static string ModelKey(int modelNumber) => modelNumber switch
     10 => "NetFrontDefenseModel",
     _ => "",
 };
+
+static JsonArray TakeArray(JsonNode? arrayNode, int count)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    foreach (var item in array.Take(count))
+    {
+        output.Add(item?.DeepClone());
+    }
+
+    return output;
+}
+
+static JsonArray TakeTopPerSeason(
+    JsonNode? arrayNode,
+    string sortProperty,
+    bool descending,
+    int count,
+    Func<JsonNode?, bool>? predicate = null)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    var rows = array
+        .Where(item => predicate?.Invoke(item) ?? true)
+        .GroupBy(item => IntValue(item?["season"]))
+        .Where(group => group.Key > 0);
+
+    foreach (var group in rows.OrderByDescending(group => group.Key))
+    {
+        var sorted = descending
+            ? group.OrderByDescending(item => NumberValue(item?[sortProperty]) ?? double.MinValue)
+            : group.OrderBy(item => NumberValue(item?[sortProperty]) ?? double.MaxValue);
+
+        foreach (var item in sorted.Take(count))
+        {
+            output.Add(item?.DeepClone());
+        }
+    }
+
+    return output;
+}
+
+static JsonArray BuildSeasonArray(params JsonNode?[] seasonNodes)
+{
+    var seasons = new SortedSet<int>(Comparer<int>.Create((left, right) => right.CompareTo(left)));
+
+    foreach (var node in seasonNodes)
+    {
+        var array = node?.AsArray();
+        if (array is null)
+        {
+            continue;
+        }
+
+        foreach (var item in array)
+        {
+            var value = IntValue(item);
+            if (value > 0)
+            {
+                seasons.Add(value);
+            }
+        }
+    }
+
+    var output = new JsonArray();
+    foreach (var season in seasons)
+    {
+        output.Add(season);
+    }
+
+    return output;
+}
 
 static object ToModelCard(string key, JsonNode? model)
 {

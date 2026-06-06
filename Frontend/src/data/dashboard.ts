@@ -74,14 +74,128 @@ export type ModelCard = {
   sample?: Record<string, string | null>
 }
 
+export type SourceInfo = {
+  name: string
+  url: string
+  credit: string
+}
+
+export type MovementRow = {
+  movement_bucket: string
+  shots: number
+  avg_xg: number
+  goal_rate: number
+  rebound_generated_rate?: number
+  continued_in_zone_rate?: number
+  royal_road_rate?: number
+}
+
+export type AftershockTeam = {
+  team: string
+  after_block_shots: number
+  avg_xg_after_block: number
+  high_danger_after_block_rate: number
+}
+
+export type GoalieControlRow = {
+  goalie: string
+  season?: number
+  pk_shots_faced: number
+  gsax: number
+  gsax_per100?: number
+  control_score: number
+  rebounds_allowed_above_expected: number
+  rebounds_allowed_above_expected_per100?: number
+  freeze_above_expected: number
+}
+
+export type FatigueRow = {
+  bucket: string
+  shots: number
+  avg_xg: number
+  goal_rate: number
+  royal_road_rate?: number
+}
+
+export type TwoWayLeader = {
+  player_id?: number
+  name: string
+  position: string
+  season?: number
+  teams: string
+  ice_time: number
+  on_ice_sh_xg_for_per60: number
+  on_ice_xga_per60: number
+  two_way_net_xg_per60: number
+  shot_attempt_share?: number
+  offense_percentile?: number
+  defense_percentile?: number
+  two_way_percentile?: number
+}
+
+export type PkTalentRow = TwoWayLeader & {
+  raw_pk_impact_per60: number
+  true_talent_pk_impact_per60: number
+  impact_uncertainty: number
+  impact_lower_90: number
+  impact_upper_90: number
+  sample_weight: number
+  trust_label: string
+  true_talent_percentile?: number
+  uncertainty_percentile?: number
+}
+
+export type SimilarPlayerMatch = {
+  player_id: number
+  name: string
+  position: string
+  teams: string
+  similarity_score: number
+  true_talent_pk_impact_per60: number
+  trust_label: string
+}
+
+export type PlayerSimilarityGroup = {
+  season: number
+  player_id: number
+  name: string
+  position: string
+  teams: string
+  true_talent_pk_impact_per60: number
+  trust_label: string
+  matches: SimilarPlayerMatch[]
+}
+
+export type RushSetRow = {
+  shot_context: string
+  shots: number
+  avg_xg: number
+  goal_rate: number
+}
+
 export type AnalyticsDashboard = {
   latestRun: LatestRun
+  version?: string
+  source?: SourceInfo
   metrics: Metric[]
   takeaways: Takeaway[]
   forayRows: ForayRow[]
   entryRows: EntryRow[]
   faceoffRows: FaceoffRow[]
   playerLeaders: PlayerLeaders
+  movementRows?: MovementRow[]
+  aftershockTeams?: AftershockTeam[]
+  goalieControl?: GoalieControlRow[]
+  reboundLeakWatch?: GoalieControlRow[]
+  fatigueRows?: FatigueRow[]
+  penaltyTimingRows?: FatigueRow[]
+  twoWayLeaders?: TwoWayLeader[]
+  offenseWithoutLeakage?: TwoWayLeader[]
+  trustedPkImpact?: PkTalentRow[]
+  highUpsideNoisy?: PkTalentRow[]
+  playerSimilarityGroups?: PlayerSimilarityGroup[]
+  scoutingSeasons?: number[]
+  rushSetSummary?: RushSetRow[]
   modelCards: ModelCard[]
   caveats: string[]
 }
@@ -191,6 +305,26 @@ export const fallbackDashboard: AnalyticsDashboard = {
       { full_name: 'Rasmus Andersson', position: 'D', blocked_shots: 79, high_danger_block_rate: 0.962 },
     ],
   },
+  version: 'legacy_fallback',
+  source: undefined,
+  movementRows: [
+    { movement_bucket: 'rebound', shots: 9753, avg_xg: 0.256, goal_rate: 0.197, rebound_generated_rate: 0.124 },
+    { movement_bucket: 'north_south_downhill', shots: 1231, avg_xg: 0.132, goal_rate: 0.114, rebound_generated_rate: 0.085 },
+    { movement_bucket: 'small_area', shots: 16967, avg_xg: 0.111, goal_rate: 0.112, rebound_generated_rate: 0.086 },
+    { movement_bucket: 'east_west', shots: 7974, avg_xg: 0.079, goal_rate: 0.087, rebound_generated_rate: 0.074 },
+  ],
+  aftershockTeams: [],
+  goalieControl: [],
+  reboundLeakWatch: [],
+  fatigueRows: [],
+  penaltyTimingRows: [],
+  twoWayLeaders: [],
+  offenseWithoutLeakage: [],
+  trustedPkImpact: [],
+  highUpsideNoisy: [],
+  playerSimilarityGroups: [],
+  scoutingSeasons: [],
+  rushSetSummary: [],
   modelCards: [],
   caveats: [
     'Player tables are tagged event-participant scouting, not true on-ice impact.',

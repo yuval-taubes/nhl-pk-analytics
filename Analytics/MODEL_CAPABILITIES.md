@@ -1,10 +1,10 @@
 # Analytics Model Capability Review
 
-Last reviewed: 2026-05-14
+Last reviewed: 2026-06-05
 
 ## Bottom Line
 
-The database is strong enough for possession-level PK analytics, xG backfilling, entry outcomes, faceoff outcomes, and event-participant scouting. It is not strong enough for true on-ice player impact, forecheck formation detection, or player positioning claims because `event_players` stores tagged event participants, not every skater on the ice.
+The original NHL API database is strong enough for possession-level PK analytics, xG backfilling, entry outcomes, faceoff outcomes, and event-participant scouting. The MoneyPuck v2 layer adds stronger public shot-quality, goalie-outcome, rebound, fatigue, and season-scouting views. Neither source is strong enough for true on-ice player impact, forecheck formation detection, or player positioning claims without shift/tracking data.
 
 ## What We Can Do Half-Well
 
@@ -13,6 +13,7 @@ The database is strong enough for possession-level PK analytics, xG backfilling,
 - PK offensive-zone foray risk/reward: short-handed xG generated versus immediate counterattack xGA.
 - Faceoff value: PK DZ faceoff wins/losses and xGA in the next 20 seconds, including circle-side breakdowns.
 - Participant scouting: players tagged on blocks, takeaways, hits, giveaways, penalties, and faceoffs.
+- MoneyPuck v2 descriptive models: pre-shot movement buckets, blocked-shot aftershock, goalie control, fatigue timing, and season-level skater/goalie short-handed profiles.
 
 ## What We Should Not Claim
 
@@ -21,6 +22,7 @@ The database is strong enough for possession-level PK analytics, xG backfilling,
 - Off-ice team comparison for individual players.
 - Gap-control or net-front coverage from player locations.
 - Per-60 player rates unless real time-on-ice is added.
+- Causal claims from v2 public-data splits without additional validation.
 
 ## Model Adjustments
 
@@ -29,6 +31,7 @@ The database is strong enough for possession-level PK analytics, xG backfilling,
 - Models 6, 7, 8, and 10 were changed from unsupported on-ice scouting to event-participant scouting.
 - Model 9 remains one of the strongest player models because faceoff participants are explicitly tagged.
 - Model 5 remains a matched faceoff comparison, but it is not a full DoWhy causal model in this environment.
+- MoneyPuck v2 is now the primary public frontend layer; the older models remain useful as legacy context and validation scaffolding.
 
 ## Data Upgrades That Would Unlock Better Models
 

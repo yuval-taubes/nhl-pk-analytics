@@ -8,7 +8,8 @@ New-Item -ItemType Directory -Force -Path $snapshotDir | Out-Null
 
 $api = Start-Process -FilePath dotnet -ArgumentList @(
     "run",
-    "--no-build",
+    "--configuration",
+    "Release",
     "--project",
     "NhlPkApi\NhlPkApi.csproj",
     "--urls",
@@ -32,9 +33,15 @@ try {
         throw "NhlPkApi did not become ready on http://localhost:5080."
     }
 
-    $response = Invoke-WebRequest -Uri "http://localhost:5080/api/analytics/dashboard" -UseBasicParsing
+    $response = Invoke-WebRequest -Uri "http://localhost:5080/api/analytics/v2/dashboard" -UseBasicParsing
+    $payloadBytes = [Text.Encoding]::UTF8.GetByteCount($response.Content)
+    if ($payloadBytes -gt 1048576) {
+        $sizeMb = [Math]::Round($payloadBytes / 1MB, 2)
+        throw "Snapshot payload is $sizeMb MB. Refusing to write a GitHub Pages snapshot over 1 MB."
+    }
     $response.Content | Set-Content -LiteralPath $snapshotPath -Encoding UTF8
-    Write-Host "Wrote $snapshotPath"
+    $sizeKb = [Math]::Round((Get-Item -LiteralPath $snapshotPath).Length / 1KB, 1)
+    Write-Host "Wrote $snapshotPath ($sizeKb KB)"
 }
 finally {
     if ($api -and -not $api.HasExited) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   Database,
@@ -13,9 +13,17 @@ import { apiGet } from './api/client'
 import {
   fallbackDashboard,
   type AnalyticsDashboard,
+  type AftershockTeam,
   type EntryRow,
+  type FatigueRow,
   type ForayRow,
+  type GoalieControlRow,
+  type MovementRow,
+  type PkTalentRow,
+  type PlayerSimilarityGroup,
   type PlayerLeader,
+  type RushSetRow,
+  type TwoWayLeader,
 } from './data/dashboard'
 
 type ApiState = 'loading' | 'live' | 'snapshot' | 'fallback'
@@ -39,6 +47,66 @@ type ModelStory = {
   summary: string
 }
 
+type V2ModelStory = {
+  number: number
+  title: string
+  question: string
+  plainLanguage: string
+  signal: string
+  caveat: string
+}
+
+const v2ModelStories: V2ModelStory[] = [
+  {
+    number: 1,
+    title: 'Pre-shot movement',
+    question: 'Did the puck make the goalie or defenders move before the shot?',
+    plainLanguage: 'A shot gets harder to stop when the defense has to turn, slide, or recover first.',
+    signal: 'Rebounds, east-west passes, north-south downhill attacks, diagonals, and resets.',
+    caveat: 'This uses shot and last-event coordinates, not full player tracking.',
+  },
+  {
+    number: 2,
+    title: 'After a blocked shot',
+    question: 'Did the block end the play, or did the power play get another chance?',
+    plainLanguage: 'A block only helps if the short-handed team wins the loose puck after it.',
+    signal: 'Danger on the next shot after a blocked attempt.',
+    caveat: 'It measures the next recorded shot, not every scramble without a shot.',
+  },
+  {
+    number: 3,
+    title: 'Goalie control',
+    question: 'Which goalies stop the first shot and calm down the next play?',
+    plainLanguage: 'This looks beyond saves: rebounds, freezes, and whether the puck stays dangerous.',
+    signal: 'Goals saved, rebounds, freezes, and play continuation after PK shots.',
+    caveat: 'Team defense still affects what happens after the save.',
+  },
+  {
+    number: 4,
+    title: 'Fatigue curve',
+    question: 'Do shots get more dangerous when penalty killers are stuck out there?',
+    plainLanguage: 'Tired defenders close lanes slower and lose more second races.',
+    signal: 'Average xG by defending skater time-on-ice buckets.',
+    caveat: 'It is a timing profile, not proof that one player caused the breakdown.',
+  },
+  {
+    number: 5,
+    title: 'Two-way PK skaters',
+    question: 'Who helps the PK create pressure without giving it all back?',
+    plainLanguage: 'The best PK skaters buy time, create exits, and sometimes create offense.',
+    signal: 'On-ice short-handed xG for and xG against per 60.',
+    caveat: 'Read these by season; PK roles can change quickly.',
+  },
+  {
+    number: 6,
+    title: 'Rush or settled play',
+    question: 'Was the chance off a fast attack or an organized power play setup?',
+    plainLanguage: 'This separates fast attacks from settled power-play shots.',
+    signal: 'MoneyPuck rush flag compared with set offense.',
+    caveat: 'The rush sample is small, so treat it as supporting context.',
+  },
+]
+
 const modelStories: ModelStory[] = [
   {
     number: 2,
@@ -47,10 +115,10 @@ const modelStories: ModelStory[] = [
     shortTitle: 'OZ Forays',
     question: 'When a penalty kill gets up ice, does the reward survive the counterattack risk?',
     finding: 'Short-handed offensive-zone forays were positive in the short window, with small measured immediate counterattack risk.',
-    whyItMatters: 'This reframes PK offense as a possession decision instead of a vague aggression label.',
+    whyItMatters: 'This makes short-handed offense a possession choice, not just an aggression label.',
     graphic: 'forays',
     caveat: 'The model does not know how many skaters committed up ice because tracking and shift data are not present.',
-    summary: 'The result is not "attack more." It is "PK offense has measurable short-window value, but we still need tracking data before judging commitment."',
+    summary: 'Short-handed offense can buy value, but this still cannot tell whether a unit sent too many skaters up ice.',
   },
   {
     number: 3,
@@ -74,7 +142,7 @@ const modelStories: ModelStory[] = [
     whyItMatters: 'The result turns entry defense into an outcome question instead of a formation guess.',
     graphic: 'entries',
     caveat: 'This is not a forecheck-structure detector. It cannot identify wedge, diamond, or pressure shape.',
-    summary: 'This page compares what happened after entry types, not what the PK formation looked like.',
+    summary: 'This compares outcomes after entry types. It does not identify the PK formation.',
   },
   {
     number: 5,
@@ -131,10 +199,10 @@ const modelStories: ModelStory[] = [
     shortTitle: 'Center Value',
     question: 'Which center seasons created the most PK value through faceoffs?',
     finding: 'Center faceoff value is one of the strongest player-level views because faceoff participants are explicit.',
-    whyItMatters: 'This is the cleanest player model in the suite.',
+    whyItMatters: 'This is the cleanest player model in the legacy suite.',
     graphic: 'centers',
     caveat: 'Faceoff participants are inferred from tagged event players and may include non-center support in edge cases.',
-    summary: 'This is the player model I trust most because faceoff participants are directly observable.',
+    summary: 'This is the most trustworthy legacy player view because faceoff participants are directly observable.',
   },
   {
     number: 10,
@@ -155,8 +223,8 @@ const modelOne = {
   title: 'Blue-Line And Entry Attempts',
   shortTitle: 'Entry Attempts',
   question: 'How often do power plays get across the line cleanly against the PK?',
-  finding: 'Model 1 is part of the earlier analytics layer and should become the bridge between ingestion quality and the model-story site.',
-  caveat: 'This page is staged until Model 1 is normalized into the same API payload as Models 2-10.',
+  finding: 'Model 1 is part of the earlier analytics layer and tracks how cleanly power plays enter the zone.',
+  caveat: 'This page is staged until Model 1 is shaped into the same API format as the other legacy pages.',
 }
 
 const navItems = [
@@ -207,6 +275,23 @@ function formatXg(value?: number) {
   return typeof value === 'number' ? value.toFixed(3) : 'n/a'
 }
 
+function formatDecimal(value?: number, digits = 2) {
+  return typeof value === 'number' ? value.toFixed(digits) : 'n/a'
+}
+
+function formatSignedDecimal(value?: number, digits = 2) {
+  if (typeof value !== 'number') return 'n/a'
+  return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`
+}
+
+function formatPercentPoint(value?: number) {
+  return typeof value === 'number' ? `${(value * 100).toFixed(0)}%` : 'n/a'
+}
+
+function formatMinutes(value?: number) {
+  return typeof value === 'number' ? `${Math.round(value / 60)} min` : 'n/a'
+}
+
 function modelHref(modelNumber: number) {
   return `#/models/${modelNumber}`
 }
@@ -248,7 +333,8 @@ function App() {
   useEffect(() => {
     const controller = new AbortController()
 
-    apiGet<AnalyticsDashboard>('/analytics/dashboard', { signal: controller.signal })
+    apiGet<AnalyticsDashboard>('/analytics/v2/dashboard', { signal: controller.signal })
+      .catch(() => apiGet<AnalyticsDashboard>('/analytics/dashboard', { signal: controller.signal }))
       .then((data) => {
         setDashboard(data)
         setApiState('live')
@@ -342,7 +428,7 @@ function HomePage({
         <div className="hero-copy">
           <h1>Decode the Penalty Kill.</h1>
           <p>
-            The plays NHL penalty kills give up, translated into sharp model stories.
+            The plays NHL penalty kills give up, translated into clear hockey answers.
           </p>
           <div className="hero-actions">
             <a className="primary-link" href="#/models">Explore models <ArrowRight size={18} /></a>
@@ -362,17 +448,20 @@ function HomePage({
             <div className="story-value">{takeaway.value}</div>
             <h2>{takeaway.title}</h2>
           <p>{takeaway.detail}</p>
-          <span>{takeaway.tone === 'good' ? 'Immediate danger drops' : takeaway.tone === 'bad' ? 'Tradeoff, not reset' : 'Outcome comparison'}</span>
+          <span>{takeawayFooter(takeaway, dashboard.version)}</span>
         </article>
       ))}
       </section>
 
+      <V2DecisionLab dashboard={dashboard} />
+
       <section className="section-band model-lab-band">
         <div className="model-lab-copy">
-          <h2>Start with a hockey question.</h2>
+          {dashboard.version === 'moneypuck_v2' && <span className="legacy-kicker">Legacy model archive</span>}
+          <h2>Earlier NHL API questions.</h2>
           <p>
-            These are the cleanest entry points into the project. Each one opens a model page with the result,
-            the supporting rows, and the line where the data stops.
+            These pages came before the MoneyPuck rebuild. They are still useful background, but they are not
+            the main model set anymore.
           </p>
           <div className="definition-deck" aria-label="Model terminology">
             <DefinitionTerm
@@ -401,6 +490,367 @@ function HomePage({
       </section>
     </>
   )
+}
+
+function takeawayFooter(takeaway: { tone: string; title: string }, version?: string) {
+  if (version === 'moneypuck_v2') {
+    if (takeaway.title.toLowerCase().includes('rebound')) return 'Look for second shots'
+    if (takeaway.title.toLowerCase().includes('block')) return 'Look after the block'
+    if (takeaway.title.toLowerCase().includes('goalie')) return 'Look beyond saves'
+    return 'Read this first'
+  }
+
+  return takeaway.tone === 'good' ? 'Immediate danger drops' : takeaway.tone === 'bad' ? 'Tradeoff, not reset' : 'Outcome comparison'
+}
+
+function V2DecisionLab({ dashboard }: { dashboard: AnalyticsDashboard }) {
+  const movementRows = dashboard.movementRows ?? []
+  const aftershockRows = dashboard.aftershockTeams ?? []
+  const goalieRows = dashboard.goalieControl ?? []
+  const fatigueRows = dashboard.fatigueRows ?? []
+  const twoWayRows = dashboard.twoWayLeaders ?? []
+  const rushRows = dashboard.rushSetSummary ?? []
+  const reboundRow = movementRows.find((row) => row.movement_bucket === 'rebound')
+  const northSouthRow = movementRows.find((row) => row.movement_bucket === 'north_south_downhill')
+  const diagonalRow = movementRows.find((row) => row.movement_bucket === 'diagonal')
+  const lateFatigue = fatigueRows[fatigueRows.length - 1]
+  const earlyFatigue = fatigueRows[0]
+  const hasV2 = dashboard.version === 'moneypuck_v2'
+  if (!hasV2) return null
+
+  return (
+    <section className="v2-lab" id="moneypuck-v2">
+      <div className="v2-lab-heading">
+        <span>MoneyPuck v2</span>
+        <h2>What creates PK danger?</h2>
+        <p>
+          Start with the simple question: what happened before the shot? The MoneyPuck rebuild points to the
+          repeat situations that break penalty kills: loose rebounds, failed recoveries after blocks, tired
+          defenders, and goalies forced to manage the next play.
+        </p>
+        {dashboard.source && (
+          <a href={dashboard.source.url} target="_blank" rel="noreferrer">{dashboard.source.credit}</a>
+        )}
+      </div>
+
+      <div className="v2-plain-language" aria-label="Plain language model guide">
+        <DefinitionTerm
+          term="PK"
+          body="Penalty kill. One team has fewer skaters and is trying to survive until the penalty ends."
+        />
+        <DefinitionTerm
+          term="xG"
+          body="Expected goals. A 0.100 xG shot goes in about one time out of ten."
+        />
+        <DefinitionTerm
+          term="Slot-line pass"
+          body="A pass or rebound across the middle of the ice. It usually forces the goalie to move laterally."
+        />
+      </div>
+
+      <div className="v2-feature-grid">
+        <MovementModelCard rows={movementRows} reboundRow={reboundRow} northSouthRow={northSouthRow} diagonalRow={diagonalRow} />
+        <AftershockModelCard rows={aftershockRows} />
+        <GoalieControlModelCard rows={goalieRows} />
+        <FatigueModelCard rows={fatigueRows} early={earlyFatigue} late={lateFatigue} />
+        <TwoWayModelCard rows={twoWayRows} />
+        <RushSetModelCard rows={rushRows} />
+      </div>
+    </section>
+  )
+}
+
+function MovementModelCard({
+  rows,
+  reboundRow,
+  northSouthRow,
+  diagonalRow,
+}: {
+  rows: MovementRow[]
+  reboundRow?: MovementRow
+  northSouthRow?: MovementRow
+  diagonalRow?: MovementRow
+}) {
+  const maxXg = Math.max(...rows.map((row) => row.avg_xg), 0.001)
+  return (
+    <article className="v2-model-card v2-model-card-wide">
+      <div className="movement-copy-stack">
+        <div className="v2-card-copy">
+          <span className="v2-model-number">01</span>
+          <h3>Pre-shot movement</h3>
+          <p>
+            Each tile shows one movement type before the shot. The attacking net is on the right. Use the bars
+            to compare which path produced the most danger per shot.
+          </p>
+        </div>
+        <div className="v2-insight-row">
+          <strong>{formatXg(reboundRow?.avg_xg)}</strong>
+          <span>Rebound shots were the highest-danger group. The first save or block did not finish the play.</span>
+        </div>
+        <div className="v2-comparison-grid">
+          <MiniFact label="North-south downhill" value={formatXg(northSouthRow?.avg_xg)} helper="Downhill movement into the slot" />
+          <MiniFact label="Diagonal" value={formatXg(diagonalRow?.avg_xg)} helper="Both lane and depth changed before release" />
+          <MiniFact label="Slot-line rebound" value={formatPercentPoint(reboundRow?.royal_road_rate)} helper="Rebounds that crossed the middle" />
+        </div>
+        <div className="v2-evidence-list">
+          {rows.slice(0, 7).map((row) => (
+            <div className="v2-meter-row" key={row.movement_bucket}>
+              <span>{plainBucketLabel(row.movement_bucket)}</span>
+              <i><b style={{ width: `${Math.max((row.avg_xg / maxXg) * 100, 4)}%` }} /></i>
+              <strong>{formatXg(row.avg_xg)}</strong>
+              <em>{numberFormatter.format(row.shots)} shots</em>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="movement-data-stack">
+        <MovementPathLegend />
+      </div>
+    </article>
+  )
+}
+
+type MovementPathTileProps = {
+  className: string
+  label: string
+  helper: string
+  path: string
+  secondaryPath?: string
+}
+
+function MovementPathLegend() {
+  return (
+    <div className="movement-legend" aria-label="Mini rink legend for pre-shot movement paths">
+      <MovementPathTile
+        className="north"
+        label="North-south downhill"
+        helper="Downhill toward the slot or crease."
+        path="M62 86C105 82 150 81 198 84"
+      />
+      <MovementPathTile
+        className="east"
+        label="East-west"
+        helper="Across the slot before the shot."
+        path="M168 42C150 62 149 110 170 132"
+      />
+      <MovementPathTile
+        className="diagonal"
+        label="Diagonal"
+        helper="Changes lane and depth."
+        path="M62 130C100 108 142 83 196 58"
+      />
+      <MovementPathTile
+        className="rebound"
+        label="Rebound"
+        helper="First attempt, then loose puck."
+        path="M152 86C174 84 191 84 209 85"
+        secondaryPath="M210 91C194 108 174 118 151 121"
+      />
+      <MovementPathTile
+        className="backtrack"
+        label="Point reset"
+        helper="Back away from the net."
+        path="M190 62C152 51 103 49 58 60"
+      />
+    </div>
+  )
+}
+
+function MovementPathTile({ className, label, helper, path, secondaryPath }: MovementPathTileProps) {
+  return (
+    <article className={`movement-tile ${className}`}>
+      <svg viewBox="0 0 260 170" role="img" aria-label={`${label} movement path`}>
+        <defs>
+          <marker id={`tileArrow-${className}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0 0L8 4L0 8Z" />
+          </marker>
+        </defs>
+        <rect className="tile-rink" x="14" y="18" width="232" height="126" rx="20" />
+        <line className="tile-blue-line" x1="48" y1="24" x2="48" y2="138" />
+        <line className="tile-goal-line" x1="218" y1="44" x2="218" y2="120" />
+        <path className="tile-crease" d="M218 63L218 101C202 101 191 94 191 82C191 70 202 63 218 63Z" />
+        <rect className="tile-slot" x="154" y="48" width="48" height="68" rx="12" />
+        <rect className="tile-net" x="224" y="70" width="15" height="26" rx="4" />
+        <path className="tile-path" d={path} />
+        {secondaryPath && <path className="tile-path secondary" d={secondaryPath} />}
+      </svg>
+      <div>
+        <strong>{label}</strong>
+        <span>{helper}</span>
+      </div>
+    </article>
+  )
+}
+
+function AftershockModelCard({ rows }: { rows: AftershockTeam[] }) {
+  const top = rows[0]
+  return (
+    <article className="v2-model-card">
+      <div className="v2-card-copy">
+        <span className="v2-model-number">02</span>
+        <h3>After a blocked shot</h3>
+        <p>
+          The important part is not the block. It is the next race. This ranks teams by the danger they allowed
+          on the next shot after a blocked attempt.
+        </p>
+      </div>
+      <div className="v2-insight-row warning">
+        <strong>{top ? formatXg(top.avg_xg_after_block) : 'n/a'}</strong>
+        <span>{top ? `${top.team} allowed the most dangerous follow-up shots after blocks.` : 'Refresh MoneyPuck v2 to show team after-block leaders.'}</span>
+      </div>
+      <div className="v2-evidence-list">
+        {rows.slice(0, 5).map((row) => (
+          <div className="v2-row" key={row.team}>
+            <span>{row.team}</span>
+            <strong>{formatXg(row.avg_xg_after_block)}</strong>
+            <em>{numberFormatter.format(row.after_block_shots)} follow-up shots / {formatRate(row.high_danger_after_block_rate)} high danger</em>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function GoalieControlModelCard({ rows }: { rows: GoalieControlRow[] }) {
+  const top = rows[0]
+  return (
+    <article className="v2-model-card">
+      <div className="v2-card-copy">
+        <span className="v2-model-number">03</span>
+        <h3>Goalie control</h3>
+        <p>
+          Saves are only the first part. This checks whether the goalie also settles the play: fewer dangerous
+          rebounds, more freezes, and fewer second chances.
+        </p>
+      </div>
+      <div className="v2-insight-row good">
+        <strong>{top ? formatDecimal(top.control_score, 1) : 'n/a'}</strong>
+        <span>{top ? `${top.goalie} led the control score. Higher means stronger saves plus cleaner next plays.` : 'Refresh MoneyPuck v2 to show goalie control leaders.'}</span>
+      </div>
+      <div className="v2-evidence-list">
+        {rows.slice(0, 5).map((row) => (
+          <div className="v2-row" key={row.goalie}>
+            <span>{row.goalie}</span>
+            <strong>{formatDecimal(row.control_score, 1)}</strong>
+            <em>{numberFormatter.format(row.pk_shots_faced)} PK shots / {formatSignedDecimal(row.gsax, 1)} goals saved above expected</em>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function FatigueModelCard({
+  rows,
+  early,
+  late,
+}: {
+  rows: FatigueRow[]
+  early?: FatigueRow
+  late?: FatigueRow
+}) {
+  const maxXg = Math.max(...rows.map((row) => row.avg_xg), 0.001)
+  const lift = typeof early?.avg_xg === 'number' && typeof late?.avg_xg === 'number'
+    ? late.avg_xg - early.avg_xg
+    : undefined
+  return (
+    <article className="v2-model-card">
+      <div className="v2-card-copy">
+        <span className="v2-model-number">04</span>
+        <h3>Fatigue curve</h3>
+        <p>
+          Read left to right. The bars show whether shot danger rises as the same penalty killers stay on the ice.
+        </p>
+      </div>
+      <div className="v2-insight-row warning">
+        <strong>{formatSignedDecimal(lift, 3)}</strong>
+        <span>Difference between the freshest group and the most tired group. Positive means tired shifts gave up harder shots.</span>
+      </div>
+      <div className="fatigue-curve" aria-label="Fatigue curve by defender average time on ice">
+        {rows.map((row) => (
+          <div className="fatigue-bar" key={row.bucket}>
+            <i style={{ height: `${Math.max((row.avg_xg / maxXg) * 100, 12)}%` }} />
+            <span>{row.bucket}</span>
+            <strong>{formatXg(row.avg_xg)}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function TwoWayModelCard({ rows }: { rows: TwoWayLeader[] }) {
+  const top = rows[0]
+  return (
+    <article className="v2-model-card">
+      <div className="v2-card-copy">
+        <span className="v2-model-number">05</span>
+        <h3>Two-way PK skaters</h3>
+        <p>
+          The PK usually loses the shot-quality battle. This looks for skaters who make that gap smaller by
+          creating pressure while limiting what comes back.
+        </p>
+      </div>
+      <div className="v2-insight-row good">
+        <strong>{top ? formatSignedDecimal(top.two_way_net_xg_per60, 2) : 'n/a'}</strong>
+        <span>{top ? `${top.name} leads this run. Closer to zero is better because short-handed teams usually lose the xG battle.` : 'Refresh MoneyPuck v2 to show player leaders.'}</span>
+      </div>
+      <div className="v2-evidence-list">
+        {rows.slice(0, 5).map((row) => (
+          <div className="v2-row" key={`${row.name}-${row.teams}`}>
+            <span>{row.name}</span>
+            <strong>{formatSignedDecimal(row.two_way_net_xg_per60, 2)}</strong>
+            <em>{row.position} / for {formatDecimal(row.on_ice_sh_xg_for_per60, 2)} xG, against {formatDecimal(row.on_ice_xga_per60, 2)} xG per 60</em>
+          </div>
+        ))}
+      </div>
+    </article>
+  )
+}
+
+function RushSetModelCard({ rows }: { rows: RushSetRow[] }) {
+  const rush = rows.find((row) => row.shot_context === 'rush')
+  const set = rows.find((row) => row.shot_context === 'set')
+  return (
+    <article className="v2-model-card v2-diagnostic-card">
+      <div className="v2-card-copy">
+        <span className="v2-model-number">06</span>
+        <h3>Rush or settled play</h3>
+        <p>
+          Rush chances are fast attacks; settled chances come after the power play is already set up. The rush
+          sample is small, so use this as context rather than a headline.
+        </p>
+      </div>
+      <div className="v2-comparison-grid">
+        <MiniFact label="Rush shots" value={numberFormatter.format(rush?.shots ?? 0)} helper={`${formatXg(rush?.avg_xg)} average xG`} />
+        <MiniFact label="Set shots" value={numberFormatter.format(set?.shots ?? 0)} helper={`${formatXg(set?.avg_xg)} average xG`} />
+      </div>
+    </article>
+  )
+}
+
+function MiniFact({ label, value, helper }: { label: string; value: string; helper: string }) {
+  return (
+    <div className="mini-fact">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <em>{helper}</em>
+    </div>
+  )
+}
+
+function plainBucketLabel(value: string) {
+  const labels: Record<string, string> = {
+    rebound: 'Rebound',
+    north_south_downhill: 'North-south downhill',
+    small_area: 'Small-area pressure',
+    east_west: 'East-west',
+    slow_reset: 'Slow reset',
+    diagonal: 'Diagonal',
+    point_reset_backtrack: 'Point reset or backtrack',
+  }
+
+  return labels[value] ?? slugLabel(value)
 }
 
 function RinkTraceHero({ faceoffValue, forayCount }: { faceoffValue: string; forayCount: string }) {
@@ -463,13 +913,45 @@ function DefinitionTerm({ term, body }: { term: string; body: string }) {
 }
 
 function ModelsPage({ dashboard, apiState }: { dashboard: AnalyticsDashboard; apiState: ApiState }) {
+  const hasV2 = dashboard.version === 'moneypuck_v2'
+
   return (
     <section className="page-section">
       <PageIntro
         title="Models as hockey arguments."
-        body="Every page is written around one question, one supported finding, and one boundary. The point is to make the analysis readable before it becomes interactive."
+        body={hasV2
+          ? 'The MoneyPuck rebuild is the main model suite. Each model starts with a hockey question, explains the idea in plain language, and then shows the number behind it.'
+          : 'Every page is written around one question, one supported finding, and one boundary. The point is to make the analysis readable before it becomes interactive.'}
       />
+      {hasV2 && (
+        <div className="v2-model-index" aria-label="Current MoneyPuck model suite">
+          <div className="model-index-heading">
+            <span>Current suite</span>
+            <h2>MoneyPuck v2 models</h2>
+            <p>These are the current project models. The older NHL API pages remain below for context.</p>
+          </div>
+          {v2ModelStories.map((story) => (
+            <article className="v2-model-index-row" key={story.title}>
+              <span>{String(story.number).padStart(2, '0')}</span>
+              <div>
+                <h3>{story.title}</h3>
+                <p>{story.question}</p>
+                <em>{story.plainLanguage}</em>
+                <small>{story.caveat}</small>
+              </div>
+              <strong>{story.signal}</strong>
+            </article>
+          ))}
+        </div>
+      )}
       <div className="model-index">
+        {hasV2 && (
+          <div className="model-index-heading legacy-heading">
+            <span>Legacy context</span>
+            <h2>NHL API model archive</h2>
+            <p>Earlier work from the original play-by-play pipeline.</p>
+          </div>
+        )}
         <a className="model-index-row muted-row" href={modelHref(1)}>
           <span>01</span>
           <div>
@@ -705,6 +1187,10 @@ function ModelEvidence({ dashboard, story }: { dashboard: AnalyticsDashboard; st
 }
 
 function ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
+  if (dashboard.version === 'moneypuck_v2') {
+    return <V2ScoutingPage dashboard={dashboard} />
+  }
+
   const groups = [
     ['Forward event share', dashboard.playerLeaders.forwards],
     ['Defense disruption share', dashboard.playerLeaders.defensemen],
@@ -736,6 +1222,219 @@ function ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
       </div>
     </section>
   )
+}
+
+function V2ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
+  const seasons = useMemo(() => {
+    const explicit = dashboard.scoutingSeasons ?? []
+    const derived = [
+      ...(dashboard.twoWayLeaders ?? []).map((row) => row.season),
+      ...(dashboard.goalieControl ?? []).map((row) => row.season),
+      ...(dashboard.trustedPkImpact ?? []).map((row) => row.season),
+      ...(dashboard.highUpsideNoisy ?? []).map((row) => row.season),
+      ...(dashboard.playerSimilarityGroups ?? []).map((row) => row.season),
+    ].filter((season): season is number => typeof season === 'number')
+
+    return [...new Set([...explicit, ...derived])].sort((a, b) => b - a)
+  }, [dashboard])
+
+  const [selectedSeason, setSelectedSeason] = useState<number | undefined>(() => seasons[0])
+  const activeSeason = selectedSeason && seasons.includes(selectedSeason) ? selectedSeason : seasons[0]
+
+  const twoWay = useMemo(() => {
+    return (dashboard.twoWayLeaders ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => b.two_way_net_xg_per60 - a.two_way_net_xg_per60)
+  }, [dashboard.twoWayLeaders, activeSeason])
+
+  const offense = useMemo(() => {
+    return (dashboard.offenseWithoutLeakage ?? [])
+      .filter((row) => row.season === activeSeason)
+      .filter((row) => (row.offense_percentile ?? 0) >= 70 && (row.defense_percentile ?? 0) >= 45)
+      .sort((a, b) => b.two_way_net_xg_per60 - a.two_way_net_xg_per60)
+  }, [dashboard.offenseWithoutLeakage, activeSeason])
+
+  const goalies = useMemo(() => {
+    return (dashboard.goalieControl ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => b.control_score - a.control_score)
+  }, [dashboard.goalieControl, activeSeason])
+
+  const reboundWatch = useMemo(() => {
+    return (dashboard.reboundLeakWatch ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => (b.rebounds_allowed_above_expected_per100 ?? b.rebounds_allowed_above_expected) - (a.rebounds_allowed_above_expected_per100 ?? a.rebounds_allowed_above_expected))
+  }, [dashboard.reboundLeakWatch, activeSeason])
+
+  const trustedTalent = useMemo(() => {
+    return (dashboard.trustedPkImpact ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => b.true_talent_pk_impact_per60 - a.true_talent_pk_impact_per60)
+  }, [dashboard.trustedPkImpact, activeSeason])
+
+  const noisyUpside = useMemo(() => {
+    return (dashboard.highUpsideNoisy ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => b.true_talent_pk_impact_per60 - a.true_talent_pk_impact_per60)
+  }, [dashboard.highUpsideNoisy, activeSeason])
+
+  const similarityGroups = useMemo(() => {
+    return (dashboard.playerSimilarityGroups ?? [])
+      .filter((row) => row.season === activeSeason)
+      .sort((a, b) => b.true_talent_pk_impact_per60 - a.true_talent_pk_impact_per60)
+  }, [dashboard.playerSimilarityGroups, activeSeason])
+
+  return (
+    <section className="page-section">
+      <PageIntro
+        title="Player and goalie profiles."
+        body="MoneyPuck v2 scouting is season-by-season. Pick a season, then read each list with the trust label beside it."
+      />
+      <div className="season-picker">
+        <label htmlFor="scouting-season">Season</label>
+        <select
+          id="scouting-season"
+          value={activeSeason ?? ''}
+          onChange={(event) => setSelectedSeason(Number(event.target.value))}
+        >
+          {seasons.map((season) => (
+            <option key={season} value={season}>
+              {formatSeasonLabel(season)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="scouting-feature-grid">
+        <TalentPanel
+          title="Trusted PK impact"
+          body="Best sample-adjusted estimates. Bigger minutes get more credit; small samples get pulled back."
+          rows={trustedTalent.slice(0, 5)}
+        />
+        <TalentPanel
+          title="Interesting but noisy"
+          body="Good early signs, but the sample is still thin."
+          rows={noisyUpside.slice(0, 5)}
+          muted
+        />
+        <SimilarityPanel groups={similarityGroups.slice(0, 3)} />
+      </div>
+      <div className="scouting-grid">
+        <article className="scouting-panel">
+          <h2>Two-way penalty killers</h2>
+          {twoWay.slice(0, 5).map((row) => (
+            <div className="leader-row" key={`two-way-${row.season}-${row.name}-${row.teams}`}>
+              <div>
+                <strong>{row.name}</strong>
+                <em>{row.position} / {row.teams} / closer to zero is better on the PK</em>
+              </div>
+              <b>{formatSignedDecimal(row.two_way_net_xg_per60, 2)}</b>
+            </div>
+          ))}
+        </article>
+        <article className="scouting-panel">
+          <h2>Offense without leakage</h2>
+          {offense.slice(0, 5).map((row) => (
+            <div className="leader-row" key={`offense-${row.season}-${row.name}-${row.teams}`}>
+              <div>
+                <strong>{row.name}</strong>
+                <em>{row.teams} / {formatDecimal(row.on_ice_sh_xg_for_per60, 2)} xG for / {formatDecimal(row.on_ice_xga_per60, 2)} xG against per 60</em>
+              </div>
+              <b>{formatPercentPoint(row.shot_attempt_share)}</b>
+            </div>
+          ))}
+        </article>
+        <article className="scouting-panel">
+          <h2>Goalie control leaders</h2>
+          {goalies.slice(0, 5).map((row) => (
+            <div className="leader-row" key={`goalie-${row.season}-${row.goalie}`}>
+              <div>
+                <strong>{row.goalie}</strong>
+                <em>{numberFormatter.format(row.pk_shots_faced)} PK shots faced</em>
+              </div>
+              <b>{formatDecimal(row.control_score, 1)}</b>
+            </div>
+          ))}
+        </article>
+        <article className="scouting-panel">
+          <h2>Rebound rate watch</h2>
+          {reboundWatch.slice(0, 5).map((row) => (
+            <div className="leader-row" key={`rebound-${row.season}-${row.goalie}`}>
+              <div>
+                <strong>{row.goalie}</strong>
+                <em>Extra rebounds per 100 PK shots; lower is cleaner</em>
+              </div>
+              <b>{formatSignedDecimal(row.rebounds_allowed_above_expected_per100 ?? row.rebounds_allowed_above_expected, 1)}</b>
+            </div>
+          ))}
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function TalentPanel({
+  title,
+  body,
+  rows,
+  muted = false,
+}: {
+  title: string
+  body: string
+  rows: PkTalentRow[]
+  muted?: boolean
+}) {
+  return (
+    <article className={`scouting-panel talent-panel${muted ? ' muted-talent' : ''}`}>
+      <h2>{title}</h2>
+      <p>{body}</p>
+      {rows.length === 0 && (
+        <div className="empty-panel-note">Refresh MoneyPuck v2 to show this season.</div>
+      )}
+      {rows.map((row) => (
+        <div className="talent-row" key={`${title}-${row.season}-${row.player_id}`}>
+          <div>
+            <strong>{row.name}</strong>
+            <em>{row.position} / {row.teams} / {formatMinutes(row.ice_time)} / {row.trust_label}</em>
+            <span>
+              90% range {formatSignedDecimal(row.impact_lower_90, 2)} to {formatSignedDecimal(row.impact_upper_90, 2)}
+            </span>
+          </div>
+          <b>{formatSignedDecimal(row.true_talent_pk_impact_per60, 2)}</b>
+        </div>
+      ))}
+    </article>
+  )
+}
+
+function SimilarityPanel({ groups }: { groups: PlayerSimilarityGroup[] }) {
+  return (
+    <article className="scouting-panel similarity-panel">
+      <h2>Similar player finder</h2>
+      <p>Role and outcome matches from PK minutes, offense, xGA, blocks, penalties, and adjusted impact.</p>
+      {groups.length === 0 && (
+        <div className="empty-panel-note">Refresh MoneyPuck v2 to show similar-player groups.</div>
+      )}
+      {groups.map((group) => (
+        <div className="similarity-group" key={`${group.season}-${group.player_id}`}>
+          <div className="similarity-anchor">
+            <strong>{group.name}</strong>
+            <em>{group.position} / {group.teams} / {formatSignedDecimal(group.true_talent_pk_impact_per60, 2)}</em>
+          </div>
+          <div className="similarity-matches">
+            {group.matches.slice(0, 3).map((match) => (
+              <span key={`${group.player_id}-${match.player_id}`}>
+                {match.name} <b>{formatDecimal(match.similarity_score, 0)}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </article>
+  )
+}
+
+function formatSeasonLabel(season: number) {
+  return `${season}-${String((season + 1) % 100).padStart(2, '0')}`
 }
 
 function playerMetricDescription(player: PlayerLeader) {
@@ -776,8 +1475,8 @@ function AboutPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
           <span>03</span>
           <h2>API and frontend</h2>
           <p>
-            The ASP.NET API reads the latest analytics JSON and exposes a frontend-ready contract, so the site can
-            show real model output instead of hardcoded dashboard numbers.
+            The ASP.NET API reads the latest analytics JSON and shapes it for the site, so the frontend can show
+            real model output instead of hardcoded numbers.
           </p>
         </article>
       </div>
@@ -792,7 +1491,7 @@ function AboutPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
         </div>
         <div>
           <strong>{dashboard.latestRun.fileName}</strong>
-          <span>latest analytics payload</span>
+          <span>latest analytics run</span>
         </div>
       </div>
     </section>
@@ -845,7 +1544,7 @@ function ModelRunNote({ dashboard, apiState }: { dashboard: AnalyticsDashboard; 
   return (
     <div className="run-note">
       <Sparkles size={18} />
-      <span>{apiState === 'live' ? 'Live model payload:' : apiState === 'snapshot' ? 'Published model snapshot:' : 'API offline:'}</span>
+      <span>{apiState === 'live' ? 'Live model data:' : apiState === 'snapshot' ? 'Published model snapshot:' : 'API offline:'}</span>
       <strong>{apiState === 'fallback' ? 'sample values are visible until analytics data responds' : dashboard.latestRun.fileName}</strong>
     </div>
   )

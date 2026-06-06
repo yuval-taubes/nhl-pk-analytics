@@ -1,15 +1,15 @@
 # NHL Penalty Kill Analytics
 
-An end-to-end NHL penalty-kill analytics system built from public play-by-play:
-.NET ingestion, PostgreSQL storage, Python validation/modeling, an ASP.NET API,
-and a React model-story site.
+An end-to-end NHL penalty-kill analytics system: .NET ingestion, PostgreSQL
+storage, Python modeling, an ASP.NET API, and a React site built for readable
+hockey answers.
 
 **Live frontend:** https://yuval-taubes.github.io/nhl-pk-analytics/
 
-The strongest current hockey finding is that defensive-zone PK faceoff wins
-sharply reduce immediate xGA in the next 20 seconds. Entry-impact and
-player-profile models remain deliberately framed as exploratory/descriptive
-until more validation is complete.
+The current 2.0 version is built around MoneyPuck shot quality. It focuses on
+why penalty kills break down: puck movement before the shot, rebounds, failed
+recoveries after blocks, goalie control, fatigue, and season-by-season player
+profiles.
 
 ## What This Demonstrates
 
@@ -17,30 +17,34 @@ until more validation is complete.
 - Designing a PostgreSQL schema for games, events, shots, possessions, and players.
 - Validating coordinate, manpower, possession, and join assumptions.
 - Producing descriptive penalty-kill model outputs in Python.
-- Serving model artifacts through an ASP.NET API.
+- Importing MoneyPuck CSV data for richer v2 shot-quality and scouting models.
+- Serving model outputs through an ASP.NET API.
 - Publishing an interactive React frontend with a committed real-data snapshot.
+
+The frontend does not use Bootstrap. Responsive behavior is handled in the app's
+CSS breakpoints so the MoneyPuck v2 cards can stay custom, visual, and compact.
 
 The project has four main pieces:
 
 - `NhlPkIngest`: a .NET 8 console app that ingests NHL play-by-play data into PostgreSQL.
 - `Analytics`: a Python analytics layer for data validation, xG modeling, and tactical penalty-kill model experiments.
 - `NhlPkApi`: an ASP.NET minimal API that serves the latest analytics model outputs to the web app.
-- `Frontend`: a React + TypeScript model-story site with a visual landing page and one page per model.
+- `Frontend`: a React + TypeScript site for model explanations and scouting views.
 
 For a plain-English guide to what the current models say, see `Analytics/README.md`.
 
 For a reviewer-friendly path through the project, see `docs/demo.md`,
 `docs/model_cards.md`, and `docs/validation_status.md`.
 
-The 1.0 goal is not to claim every hockey question is solved. It is to make the
-pipeline, strongest findings, and known trust boundaries easy to inspect.
+The goal is not to claim every hockey question is solved. It is to make the
+pipeline, strongest findings, and trust boundaries easy to inspect.
 
 ## Repository Layout
 
 ```text
 Data_ingestion/
 |-- Analytics/              Python diagnostics and modeling
-|-- Frontend/               React/TypeScript model-story site
+|-- Frontend/               React/TypeScript analytics site
 |-- NhlPkApi/               ASP.NET API over analytics outputs
 |-- NhlPkIngest/            .NET ingestion console app
 |-- Data_ingestion.sln      Visual Studio solution
@@ -48,7 +52,7 @@ Data_ingestion/
 `-- .gitignore              Repo-level ignore rules
 ```
 
-## 1.0 Status
+## 2.0 Status
 
 Implemented:
 
@@ -61,12 +65,17 @@ Implemented:
 - Game reprocessing support so ingestion fixes can be applied by rerunning games.
 - Analytics diagnostics for coordinate quality, join inflation, possession quality, and xG data quality.
 - Early xG and blue-line denial modeling code.
-- API endpoints that expose the latest Models 2-10 JSON outputs to the frontend.
+- API endpoints that expose the latest legacy and MoneyPuck v2 outputs.
+- MoneyPuck v2 model runner with puck-movement, goalie-control, fatigue,
+  after-block, rush/set, empirical-Bayes player impact, and similar-player
+  scouting outputs.
 - GitHub Actions CI for .NET, frontend, and Python compile checks.
 - GitHub Pages deployment for the interactive frontend.
 - Static real-data frontend snapshot at `Frontend/public/data/dashboard.json`.
+  The export script writes the trimmed MoneyPuck v2 dashboard and refuses
+  snapshots over 1 MB so the GitHub Pages front page remains fast.
 
-In progress:
+Still in progress:
 
 - Improving possession validation after the latest strength-change boundary fix.
 - Deduping player-level analytics joins before model training.
@@ -84,10 +93,18 @@ NHL API
   -> Analytics diagnostics
   -> xG / tactical models
   -> NhlPkApi
-  -> Frontend model-story site
+  -> Frontend analytics site
 ```
 
-The ingestion app owns database population. The Python layer assumes PostgreSQL is already populated and focuses on diagnostics, modeling, and research workflows. The API currently reads the latest generated analytics JSON from `Analytics/models/output/` and shapes it for the frontend.
+The ingestion app owns database loading. The Python layer assumes PostgreSQL
+already has the source tables and focuses on diagnostics, modeling, and research
+workflows. The API reads the latest generated analytics JSON from
+`Analytics/models/output/` and shapes it for the frontend.
+
+The MoneyPuck v2 path imports downloadable CSV files into `mp_*` tables and
+writes `models_v2_run_*.json` files. The live API serves compact dashboard rows
+for each season and keeps full model output behind detail endpoints and local
+files. The older NHL API models remain as background context.
 
 ## Prerequisites
 
@@ -221,6 +238,15 @@ Full analytics pipeline:
 ./venv/Scripts/python.exe main.py
 ```
 
+MoneyPuck v2 pipeline:
+
+```bash
+export NHL_DB_PASSWORD=your_password
+./venv/Scripts/python.exe -m moneypuck.import_moneypuck --reset
+./venv/Scripts/python.exe -m moneypuck.validate_moneypuck
+./venv/Scripts/python.exe run_models_v2.py
+```
+
 Generated reports and model artifacts are written to ignored local output folders such as `Analytics/runs/` and `Analytics/models/trained/`.
 
 ## Frontend Commands
@@ -234,10 +260,12 @@ npm run build
 npm run lint
 ```
 
-The frontend is React + TypeScript. It reads the model-story payload from
+The frontend is React + TypeScript. It reads the dashboard data from
 `http://localhost:5080/api` by default. If the API is unavailable, it loads the
 committed real-data snapshot from `Frontend/public/data/dashboard.json`; only if
-both fail does it use the small built-in fallback sample.
+both fail does it use the small built-in fallback sample. The snapshot is
+generated by `export-frontend-snapshot.ps1`, which calls the trimmed
+`/api/analytics/v2/dashboard` endpoint and enforces a 1 MB size ceiling.
 
 ## Diagnostics Notes
 
@@ -278,15 +306,15 @@ The ingestion app initializes the schema automatically on startup.
 - If ingestion logic changes, reprocess games so derived tables like `possessions` and `shots` reflect the new logic.
 - If analytics joins touch player-level tables, check for join inflation before trusting model results.
 
-## 1.0 Trust Gaps / Next Work
+## Trust Gaps / Next Work
 
 - Address the nullable warning in `PossessionTracker`.
 - Re-ingest data after the possession-boundary fix, then rerun possession validation.
 - Add event-level deduping bases for forward forechecking and defenseman gap-control models.
-- Move database credentials out of Python `Analytics/config.py` before sharing beyond local development.
+- Keep database credentials in local environment variables or ignored local config.
 - Keep `docs/coordinate_conventions.md` and `Analytics/reports/latest_manpower_context.md` current after ingestion changes.
-- Add tests around possession splitting, shot possession linking, and xG backfill behavior.
-- Add a golden-game regression test and frontend screenshots before broad outreach.
+- Add deeper tests around possession splitting, shot possession linking, and xG backfill behavior.
+- Add frontend screenshots or a short walkthrough video before broad outreach.
 
 ## Roadmap
 

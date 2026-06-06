@@ -1,6 +1,6 @@
 # Coordinate And Manpower Conventions
 
-Last updated: 2026-05-16
+Last updated: 2026-06-05
 
 This project has two conventions that must stay explicit because many model
 claims depend on them.
@@ -73,6 +73,7 @@ Current model pages may use:
 - faceoff short windows,
 - tagged event participants,
 - nearest-net shot danger features.
+- MoneyPuck v2 shot quality, rebound, freeze, and last-event coordinate fields.
 
 They should not yet claim:
 
@@ -81,3 +82,7 @@ They should not yet claim:
 - gap control,
 - net-front coverage,
 - validated entry-attempt labels.
+
+MoneyPuck v2 movement buckets are a separate public-data convention. They are
+useful for explaining shot danger before release, but they are not a substitute
+for tracking data or manual video labels.

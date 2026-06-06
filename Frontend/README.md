@@ -1,8 +1,8 @@
 # NHL PK Analytics Frontend
 
-React + TypeScript model-story site for the NHL penalty kill analytics project.
+React + TypeScript site for the NHL penalty kill analytics project.
 
-This app is intentionally shaped like an interactive hockey research publication rather than a conventional dashboard: a visual landing page, one page per model, scouting summaries, and a clear data-honesty section.
+This app is intentionally shaped like an interactive hockey research publication rather than a conventional dashboard: a visual landing page, visual model sections, season-by-season scouting summaries, and a clear data-honesty section.
 
 Published site:
 
@@ -74,13 +74,13 @@ npm run dev
 
 ## Current Screens
 
-- Landing page with an animated rink-trace hero
+- Landing page with a rink-trace hero on desktop and a lighter mobile layout
 - Model index at `#/models`
-- Individual model pages at `#/models/{modelNumber}`
-- Scouting profiles at `#/scouting`
+- Individual legacy model pages at `#/models/{modelNumber}`
+- MoneyPuck v2 scouting profiles at `#/scouting`, with a season selector
 - About/project pipeline page at `#/about`
 - Data honesty page at `#/data-honesty`
-- Live model takeaways, tactical rows, and player leaders from `GET /api/analytics/dashboard`
+- Live MoneyPuck v2 takeaways, tactical rows, and player leaders from `GET /api/analytics/v2/dashboard`
 - Published real-data snapshot from `public/data/dashboard.json` when the API is offline
 
 ## Design Direction
@@ -94,13 +94,13 @@ The UI should feel like a hockey operations research piece:
 - Amber for penalties/warnings
 - Editorial landing-page rhythm
 - Animated rink-line motifs inspired by SVG path drawing
-- One model story per page
+- Clear model explanations over dense dashboard tables
 - No generic SaaS hero pages
 
 ## Next Frontend Milestones
 
 1. Replace hash routing with a formal router if the site grows.
-2. Add richer graphics for each model page using the raw model JSON endpoints.
-3. Add team/season filters once the API supports filtered outputs.
+2. Add richer graphics for each legacy model page using the raw model JSON endpoints.
+3. Add team filters once the API supports filtered outputs.
 4. Add model diagnostics pages for coordinate, possession, and xG validation.
-5. Build a real rink component using normalized 200x85 coordinates.
+5. Add rendered screenshot checks to CI or the launch checklist.

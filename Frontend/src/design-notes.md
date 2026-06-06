@@ -29,7 +29,7 @@ The first screen should answer:
 ## Avoid
 
 - Marketing hero pages.
-- Purple AI gradients.
+- Purple presentation gradients.
 - Decorative glassmorphism that reduces data contrast.
 - Hiding critical filters behind modals.
 - Making tactical data depend only on color.

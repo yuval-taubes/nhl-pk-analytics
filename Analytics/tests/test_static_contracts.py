@@ -48,6 +48,31 @@ class StaticContractTests(unittest.TestCase):
         self.assertGreater(fixture["summary"]["shots"], 40)
         self.assertGreater(fixture["summary"]["special_teams_possessions"], 0)
 
+    def test_moneypuck_v2_uses_season_scoped_shot_key(self):
+        schema = self.read("Analytics/moneypuck/schema.sql")
+        importer = self.read("Analytics/moneypuck/import_moneypuck.py")
+        self.assertIn("PRIMARY KEY (season, game_id, shot_id)", schema)
+        self.assertIn("shot_id", importer)
+        self.assertIn("strength_state", importer)
+
+    def test_moneypuck_v2_models_credit_source_and_keep_old_runner_separate(self):
+        runner = self.read("Analytics/run_models_v2.py")
+        models = self.read("Analytics/models_v2/moneypuck_pk_models.py")
+        self.assertIn("https://www.moneypuck.com/data.htm", runner)
+        self.assertIn("models_v2_run_", runner)
+        self.assertIn("Blocked-Shot Aftershock", models)
+        self.assertIn("Puck Movement Geometry", models)
+
+    def test_moneypuck_v2_scouting_has_talent_and_similarity_layer(self):
+        runner = self.read("Analytics/run_models_v2.py")
+        api = self.read("NhlPkApi/Program.cs")
+        frontend = self.read("Frontend/src/data/dashboard.ts")
+        self.assertIn("BayesianPkPlayerEvaluationModel", runner)
+        self.assertIn("trustedPkImpact", api)
+        self.assertIn("playerSimilarityGroups", api)
+        self.assertIn("PkTalentRow", frontend)
+        self.assertIn("PlayerSimilarityGroup", frontend)
+
 
 if __name__ == "__main__":
     unittest.main()

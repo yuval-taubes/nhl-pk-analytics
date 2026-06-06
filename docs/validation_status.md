@@ -1,6 +1,6 @@
 # Validation Status
 
-Last updated: 2026-05-21
+Last updated: 2026-06-05
 
 This file is the project trust ledger. It separates checks that currently have
 machine-readable support from checks that still need manual or regression-test
@@ -13,6 +13,11 @@ coverage.
 | CI build | Passing by workflow definition | `.github/workflows/ci.yml` builds .NET, frontend, and compiles Python |
 | Published frontend | Configured | `.github/workflows/deploy-frontend.yml` deploys `Frontend/dist` to GitHub Pages |
 | Real-data static demo | Added | `Frontend/public/data/dashboard.json` is committed and copied into the static build |
+| MoneyPuck v2 dashboard | Added | `/api/analytics/v2/dashboard` serves compact top rows per season |
+| MoneyPuck v2 snapshot size | Passing locally | `Frontend/public/data/dashboard.json` is about 650 KB, below the 1 MB launch ceiling |
+| Frontend lint/build | Passing locally | `npm run lint` and `npm run build` passed on 2026-06-05 |
+| .NET build | Passing locally | `dotnet build .\Data_ingestion.sln --configuration Release` passed on 2026-06-05 |
+| Lightweight Python tests | Passing locally | `python -m unittest discover -s Analytics\tests` passed on 2026-06-05 |
 | Manpower convention | Checked locally | `Analytics/reports/latest_manpower_context.md` |
 | Latest validation summary | Added | `Analytics/reports/latest_validation_summary.md` |
 | Strength mapping | Documented | `docs/coordinate_conventions.md` |
@@ -23,6 +28,7 @@ coverage.
 | API missing metrics | Hardened | missing numeric JSON values render as `N/A` instead of zero |
 | Golden-game fixture | Added | `Analytics/diagnostics/golden_games/2022020154.json` |
 | Golden-game regression runner | Added | `Analytics/diagnostics/golden_game_regression.py` |
+| MoneyPuck source credit | Documented | `Analytics/moneypuck/README.md` and v2 API caveats credit MoneyPuck.com |
 
 ## Still Needs Proof
 
@@ -34,11 +40,12 @@ coverage.
 | Entry-attempt labels | Manually review a sample of inferred attempts |
 | Player-level joins | Add event-level dedupe bases where join diagnostics still inflate rows |
 | Demo assets | Interactive GitHub Pages demo is configured; screenshots/video are optional polish |
+| Rendered mobile QA | Manually check GitHub Pages or local dev tools before announcement; mobile hero SVG is hidden by CSS |
 
 ## External Reader Summary
 
-The repo is credible as an engineering pipeline now. The safest public claim is
-that it ingests, validates, models, serves, and visualizes NHL PK data. The
-analytics claims should stay narrower: faceoff-window results are the strongest;
-entry and player-profile models are exploratory until the validation gaps above
-are closed.
+The repo is credible as an engineering pipeline and public 2.0 demo. The safest
+public claim is that it ingests, validates, models, serves, and visualizes NHL
+PK data. The MoneyPuck v2 layer can support descriptive shot-quality, rebound,
+goalie-control, fatigue, and season-scouting views. Causal claims, tracking-style
+positioning claims, and full player-impact claims should still be avoided.

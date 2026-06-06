@@ -1,20 +1,41 @@
 # Analytics Model Guide
 
-Last updated: 2026-05-21
+Last updated: 2026-06-05
 
-This folder is the research layer for the penalty-kill project. It turns the ingested NHL play-by-play database into descriptive PK models, scouting tables, and JSON outputs for downstream analysis.
+This folder is the modeling layer for the penalty-kill project. It turns NHL
+play-by-play and MoneyPuck CSV data into validation reports, model outputs, and
+scouting tables.
 
-The most recent local run completed successfully:
+The current v2 launch run completed successfully:
 
 ```text
-models/output/models_2_10_run_20260515_152705.json
+models/output/models_v2_run_20260605_152014.json
 ```
 
-Generated files under `models/output/` are ignored by Git because they are local run artifacts. The code and the interpretation below are the durable project documentation.
+Legacy `models_2_10_run_*.json` files remain useful for the older NHL API model
+pages. Generated files under `models/output/` are ignored by Git because they
+are local runs. The code, committed snapshot, and interpretation below are the
+durable project documentation.
 
-The published frontend uses a committed snapshot of this run at
-`Frontend/public/data/dashboard.json`, so reviewers can inspect the model-story
-site without recreating the local database.
+The published frontend uses a committed compact snapshot at
+`Frontend/public/data/dashboard.json`, so reviewers can inspect the site without
+recreating the local database.
+
+## MoneyPuck V2 Layer
+
+The active expansion path lives in `moneypuck/`, `models_v2/`, and
+`run_models_v2.py`. It imports MoneyPuck downloadable CSVs into `mp_*` tables
+and writes `models/output/models_v2_run_*.json` for the API and frontend.
+
+The v2 scouting layer now includes:
+
+- season-specific skater and goalie views;
+- empirical-Bayes PK player impact estimates with approximate uncertainty;
+- trust labels such as `Strong signal`, `Useful signal`, and `Too noisy`;
+- similar-player groups based on role and outcome aggregates.
+
+For commands and model definitions, see `Analytics/moneypuck/README.md` and
+`Analytics/models_v2/README.md`.
 
 ## What The Data Can Support
 
@@ -51,9 +72,11 @@ $env:NHL_DB_PORT = "5432"
 
 The runner writes individual model JSON files plus one combined run file to `models/output/`.
 
-## Current Findings
+## Legacy NHL API Findings
 
-These findings come from the successful 2026-05-15 run.
+These findings come from the successful 2026-05-15 legacy run. They remain in
+the project as background context, while the 2.0 frontend leads with MoneyPuck
+shot quality and season-by-season v2 scouting.
 
 ### Model 2: PK Offensive-Zone Foray Risk-Reward
 
@@ -217,11 +240,12 @@ Interpretation: this is a shot-block profile, not a net-front coverage model. It
 
 ## Practical Takeaways
 
-1. DZ PK faceoff wins matter a lot. This is currently the cleanest tactical signal in the model suite.
-2. Forcing an OZ faceoff while short-handed looks worse than keeping play alive, on average.
-3. PK offensive-zone forays show positive short-window xG value with limited measured counterattack risk, but the model cannot infer skater commitment.
-4. Dump-in entries against the PK were more dangerous than controlled entries in this run, though the sample is much smaller than the faceoff samples.
-5. Player models should be used as event-participant scouting, not as full on-ice impact rankings.
+1. MoneyPuck v2 is the active public layer because it gives richer shot quality,
+   goalie outcome, rebound, fatigue, and season-scouting context.
+2. DZ PK faceoff wins remain the cleanest legacy tactical signal.
+3. Forcing an OZ faceoff while short-handed looks worse than keeping play alive, on average.
+4. PK offensive-zone forays show positive short-window xG value with limited measured counterattack risk, but the model cannot infer skater commitment.
+5. Legacy player models should be used as event-participant scouting, not as full on-ice impact rankings.
 
 ## Recommended Next Data Upgrades
 

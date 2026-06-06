@@ -1,14 +1,15 @@
 # NHL PK API
 
-This is the mid-layer between the Python analytics outputs and the React dashboard.
+This is the mid-layer between the Python analytics outputs and the React site.
 
-The first version intentionally reads the latest combined analytics JSON from:
+It reads the latest generated analytics JSON from:
 
 ```text
-../Analytics/models/output/models_2_10_run_*.json
+../Analytics/models/output/
 ```
 
-That keeps the frontend connected to real model output without requiring a reporting schema before the dashboard shape settles.
+The legacy endpoints use `models_2_10_run_*.json`. The MoneyPuck v2 endpoints use
+`models_v2_run_*.json` and return compact dashboard rows for the frontend.
 
 ## Run
 
@@ -50,9 +51,17 @@ GET /api/analytics/latest-run
 GET /api/analytics/models
 GET /api/analytics/models/{modelNumber}
 GET /api/analytics/dashboard
+GET /api/analytics/v2/latest-run
+GET /api/analytics/v2/models
+GET /api/analytics/v2/models/{modelKey}
+GET /api/analytics/v2/dashboard
 ```
 
-`/api/analytics/dashboard` is the frontend-ready endpoint. It returns metric cards, model takeaways, tactical rows, player leaders, caveats, and latest-run metadata.
+`/api/analytics/v2/dashboard` is the primary frontend endpoint for 2.0. It
+returns metric cards, model takeaways, movement rows, goalie/player scouting
+leaders, available seasons, caveats, and latest-run metadata.
+
+`/api/analytics/dashboard` remains available for the older NHL API model pages.
 
 ## Configuration
 
@@ -60,4 +69,7 @@ GET /api/analytics/dashboard
 
 ## Next Evolution
 
-This JSON-backed API is the right first step. Once the frontend interactions stabilize, promote the durable outputs into database tables and let the API read from Postgres for filtering by team, season, player, and strength state.
+This JSON-backed API is still the simplest fit for a portfolio/front-page
+release. Once the filters stabilize, promote durable outputs into database
+tables and let the API read from Postgres for team, season, player, and strength
+state filtering.

@@ -1,6 +1,6 @@
 # Validation Status
 
-Last updated: 2026-06-05
+Last updated: 2026-07-05
 
 This file is the project trust ledger. It separates checks that currently have
 machine-readable support from checks that still need manual or regression-test
@@ -14,10 +14,13 @@ coverage.
 | Published frontend | Configured | `.github/workflows/deploy-frontend.yml` deploys `Frontend/dist` to GitHub Pages |
 | Real-data static demo | Added | `Frontend/public/data/dashboard.json` is committed and copied into the static build |
 | MoneyPuck v2 dashboard | Added | `/api/analytics/v2/dashboard` serves compact top rows per season |
+| MoneyPuck source discovery | Added | `python -m moneypuck.import_moneypuck --describe-sources` prints resolved CSV groups |
+| Special teams matchup model | Added | `models_v2/special_teams_matchups.py` exports PP attack, PK leak, matchup, and heat-map aggregates |
+| Scouting Lab frontend | Passing locally | Matchup Lab, Scouting Brief, Player Passports, and Discovery sections QA-checked at desktop and 390px mobile on 2026-07-05 |
 | MoneyPuck v2 snapshot size | Passing locally | `Frontend/public/data/dashboard.json` is about 650 KB, below the 1 MB launch ceiling |
-| Frontend lint/build | Passing locally | `npm run lint` and `npm run build` passed on 2026-06-05 |
-| .NET build | Passing locally | `dotnet build .\Data_ingestion.sln --configuration Release` passed on 2026-06-05 |
-| Lightweight Python tests | Passing locally | `python -m unittest discover -s Analytics\tests` passed on 2026-06-05 |
+| Frontend build | Passing locally | `npm run build` passed on 2026-07-05 |
+| .NET build | Passing locally | `dotnet build .\Data_ingestion.sln --configuration Release` passed on 2026-07-04 |
+| Lightweight Python tests | Passing locally | `python -m unittest discover -s Analytics\tests` passed on 2026-07-04 |
 | Manpower convention | Checked locally | `Analytics/reports/latest_manpower_context.md` |
 | Latest validation summary | Added | `Analytics/reports/latest_validation_summary.md` |
 | Strength mapping | Documented | `docs/coordinate_conventions.md` |
@@ -40,12 +43,15 @@ coverage.
 | Entry-attempt labels | Manually review a sample of inferred attempts |
 | Player-level joins | Add event-level dedupe bases where join diagnostics still inflate rows |
 | Demo assets | Interactive GitHub Pages demo is configured; screenshots/video are optional polish |
-| Rendered mobile QA | Manually check GitHub Pages or local dev tools before announcement; mobile hero SVG is hidden by CSS |
+| Rendered mobile QA | Local in-app browser QA passed for `#/scouting` at 390px width on 2026-07-05; re-check GitHub Pages after deployment |
+| 2025-2026 shot-level MoneyPuck data | Download current-season shots to `shots_2025\shots_2025.csv`, then re-import |
 
 ## External Reader Summary
 
 The repo is credible as an engineering pipeline and public 2.0 demo. The safest
 public claim is that it ingests, validates, models, serves, and visualizes NHL
 PK data. The MoneyPuck v2 layer can support descriptive shot-quality, rebound,
-goalie-control, fatigue, and season-scouting views. Causal claims, tracking-style
-positioning claims, and full player-impact claims should still be avoided.
+goalie-control, fatigue, season-scouting, inferred matchup views, generated
+scouting briefs, and player passports with sample caveats. Causal claims,
+tracking-style positioning claims, exact-formation claims, and full
+player-impact claims should still be avoided.

@@ -8,11 +8,13 @@ to understand the work.
 ## What To Look At First
 
 1. Live frontend: https://yuval-taubes.github.io/nhl-pk-analytics/
-2. Root project overview: `README.md`
-3. Model capability boundaries: `Analytics/README.md`
-4. Current validation status: `docs/validation_status.md`
-5. Model cards: `docs/model_cards.md`
-6. Frontend real-data snapshot: `Frontend/public/data/dashboard.json`
+2. `#/scouting` on the live frontend: Special Teams Scouting Lab.
+3. Root project overview: `README.md`
+4. Model capability boundaries: `Analytics/README.md`
+5. Current validation status: `docs/validation_status.md`
+6. Model cards: `docs/model_cards.md`
+7. MoneyPuck v2 architecture: `docs/moneypuck_v2_architecture.md`
+8. Frontend real-data snapshot: `Frontend/public/data/dashboard.json`
 
 The live frontend is deployed by GitHub Actions. In repository settings, GitHub
 Pages should use **GitHub Actions** as the source.
@@ -83,9 +85,15 @@ $env:NHL_DB_PASSWORD = "your_password"
 ```
 
 The API exposes compact v2 dashboard output at `/api/analytics/v2/dashboard`
-when a `models_v2_run_*.json` artifact exists. The scouting page now includes a
-season selector, empirical-Bayes PK impact estimates, uncertainty labels, and
-similar-player groups. Full v2 model output remains available through
+when a `models_v2_run_*.json` artifact exists. The scouting page now presents a
+three-step workflow:
+
+1. Build the selected PP-vs-PK matchup read with the tactical board.
+2. Copy or download the generated Scouting Brief.
+3. Check player passports, then use broader player/goalie discovery as
+   supporting context.
+
+Full v2 model output remains available through
 `/api/analytics/v2/models/{modelKey}` for deeper local inspection.
 
 ## 2.0 Launch Check
@@ -103,7 +111,9 @@ cd ..
 ```
 
 The frontend uses custom CSS breakpoints rather than Bootstrap. Check at least
-desktop, tablet-ish width, and phone width before publishing.
+desktop, tablet-ish width, and phone width before publishing. For the scouting
+page specifically, verify the current season, one previous season, a manual
+zone-card click, the Scouting Brief copy action, and 390px mobile width.
 
 ## Current Headline Claim
 
@@ -117,4 +127,5 @@ The project demonstrates an end-to-end NHL penalty-kill analytics system:
 - React frontend for model review and scouting
 
 The current 2.0 focus is the MoneyPuck v2 penalty-kill view: shot movement,
-second chances, goalie control, fatigue, and season-level scouting.
+second chances, goalie control, fatigue, season-level scouting, and PP-vs-PK
+matchup briefs.

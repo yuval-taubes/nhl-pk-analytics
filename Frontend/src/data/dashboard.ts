@@ -166,11 +166,98 @@ export type PlayerSimilarityGroup = {
   matches: SimilarPlayerMatch[]
 }
 
+export type PlayerTag = {
+  tag_id: string
+  label: string
+  category: 'strength' | 'risk' | 'usage' | 'style' | 'trust'
+  confidence: 'high' | 'medium' | 'low'
+  sample_confidence?: 'high' | 'medium' | 'low'
+  tag_strength?: 'strong' | 'medium' | 'weak'
+  priority_label?: 'primary' | 'supporting' | 'watch' | 'sample'
+  reason: string
+  metrics?: Record<string, number | null>
+  sample_size_note: string
+  higher_is_better: boolean
+  league_percentile?: number | null
+  caveat?: string
+}
+
+export type PlayerTagProfile = PkTalentRow & {
+  trust_level: 'high' | 'medium' | 'low'
+  sample_trust?: 'low_sample' | 'limited_sample' | 'medium_sample' | 'strong_sample'
+  sample_trust_label?: string
+  sample_trust_sentence?: string
+  supporting_signal_count?: number
+  rate_sensitive_tag_count?: number
+  tags: PlayerTag[]
+  top_strengths: PlayerTag[]
+  main_risks: PlayerTag[]
+  summary_sentence: string
+}
+
+export type PlayerTagDefinition = {
+  tag_id: string
+  category: string
+  meaning: string
+}
+
 export type RushSetRow = {
   shot_context: string
   shots: number
   avg_xg: number
   goal_rate: number
+}
+
+export type AttackProfileRow = {
+  season?: number
+  team?: string
+  profile_type?: string
+  attack_type: string
+  shots: number
+  xg: number
+  avg_xg: number
+  xg_share?: number
+  xg_share_index?: number
+  avg_xg_index?: number
+  style_score?: number
+}
+
+export type MatchupCard = {
+  season: number
+  pp_team: string
+  pk_team: string
+  attack_type: string
+  matchup_score: number
+  pp_style_index: number
+  pk_leak_index: number
+  pp_avg_xg: number
+  pk_allowed_avg_xg: number
+  pp_shots: number
+  pk_shots_allowed: number
+  note: string
+}
+
+export type HeatmapBin = {
+  x_bin: number
+  y_bin: number
+  shots: number
+  xg: number
+  avg_xg: number
+  goal_rate?: number
+  rebound_rate?: number
+}
+
+export type TeamShotMapBin = HeatmapBin & {
+  season: number
+  team: string
+  profile_type: 'pp_attack' | 'pk_leak'
+  attack_type: string
+  rink_x?: number
+  rink_y?: number
+  xg_share?: number
+  shot_share?: number
+  map_score?: number
+  royal_road_rate?: number
 }
 
 export type AnalyticsDashboard = {
@@ -194,8 +281,16 @@ export type AnalyticsDashboard = {
   trustedPkImpact?: PkTalentRow[]
   highUpsideNoisy?: PkTalentRow[]
   playerSimilarityGroups?: PlayerSimilarityGroup[]
+  playerTagProfiles?: PlayerTagProfile[]
+  playerTagDictionary?: PlayerTagDefinition[]
   scoutingSeasons?: number[]
   rushSetSummary?: RushSetRow[]
+  leagueAttackTypes?: AttackProfileRow[]
+  ppAttackProfiles?: AttackProfileRow[]
+  pkLeakProfiles?: AttackProfileRow[]
+  matchupCards?: MatchupCard[]
+  leaguePkDangerHeatmap?: HeatmapBin[]
+  teamShotMaps?: TeamShotMapBin[]
   modelCards: ModelCard[]
   caveats: string[]
 }
@@ -323,8 +418,16 @@ export const fallbackDashboard: AnalyticsDashboard = {
   trustedPkImpact: [],
   highUpsideNoisy: [],
   playerSimilarityGroups: [],
+  playerTagProfiles: [],
+  playerTagDictionary: [],
   scoutingSeasons: [],
   rushSetSummary: [],
+  leagueAttackTypes: [],
+  ppAttackProfiles: [],
+  pkLeakProfiles: [],
+  matchupCards: [],
+  leaguePkDangerHeatmap: [],
+  teamShotMaps: [],
   modelCards: [],
   caveats: [
     'Player tables are tagged event-participant scouting, not true on-ice impact.',

@@ -73,6 +73,58 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn("PkTalentRow", frontend)
         self.assertIn("PlayerSimilarityGroup", frontend)
 
+    def test_moneypuck_source_discovery_is_separate_from_db_import(self):
+        config = self.read("Analytics/moneypuck/config.py")
+        importer = self.read("Analytics/moneypuck/import_moneypuck.py")
+        self.assertIn("MONEYPUCK_FILE_GROUPS", config)
+        self.assertIn("describe_moneypuck_sources", config)
+        self.assertIn("validate_moneypuck_freshness", config)
+        self.assertIn("--describe-sources", importer)
+        self.assertIn("from config import DB_CONFIG", importer)
+        self.assertLess(importer.index("describe_moneypuck_sources()"), importer.index("from config import DB_CONFIG"))
+        self.assertIn("ON CONFLICT ({\", \".join(conflict_keys)})", importer)
+        self.assertIn("DO UPDATE SET", importer)
+
+    def test_special_teams_matchup_model_is_split_from_core_models(self):
+        runner = self.read("Analytics/run_models_v2.py")
+        api = self.read("NhlPkApi/Program.cs")
+        frontend = self.read("Frontend/src/data/dashboard.ts")
+        special = self.read("Analytics/models_v2/special_teams_matchups.py")
+        core = self.read("Analytics/models_v2/moneypuck_pk_models.py")
+        self.assertIn("from models_v2.special_teams_matchups import SpecialTeamsMatchupModel", runner)
+        self.assertIn("matchupCards", api)
+        self.assertIn("leaguePkDangerHeatmap", api)
+        self.assertIn("teamShotMaps", api)
+        self.assertIn("export type MatchupCard", frontend)
+        self.assertIn("leaguePkDangerHeatmap?: HeatmapBin[]", frontend)
+        self.assertIn("teamShotMaps?: TeamShotMapBin[]", frontend)
+        self.assertIn("class SpecialTeamsMatchupModel", special)
+        self.assertNotIn("class SpecialTeamsMatchupModel", core)
+        self.assertIn('set_index(["season", "attack_type"])', special)
+        self.assertIn('team_totals = self.data.groupby(["season", team_col])', special)
+        self.assertIn('"team_shot_maps": records(self._team_shot_maps())', special)
+
+    def test_player_tagging_is_backend_owned_and_auditable(self):
+        runner = self.read("Analytics/run_models_v2.py")
+        api = self.read("NhlPkApi/Program.cs")
+        frontend = self.read("Frontend/src/data/dashboard.ts")
+        tags = self.read("Analytics/models_v2/player_tags.py")
+        self.assertIn("from models_v2.player_tags import PlayerTaggingModel", runner)
+        self.assertIn("playerTagProfiles", api)
+        self.assertIn("playerTagDictionary", api)
+        self.assertIn("export type PlayerTag", frontend)
+        self.assertIn("tag_id", tags)
+        self.assertIn("sample_size_note", tags)
+        self.assertIn("caveat", tags)
+        self.assertIn("source_lineage", tags)
+        self.assertNotIn("rebound_cleanup", tags)
+
+    def test_api_uses_filename_timestamp_for_latest_run_selection(self):
+        api = self.read("NhlPkApi/Program.cs")
+        self.assertIn("RunTimestamp(file) ?? file.LastWriteTimeUtc", api)
+        self.assertIn("DateTime.TryParseExact", api)
+        self.assertIn('"yyyyMMdd_HHmmss"', api)
+
 
 if __name__ == "__main__":
     unittest.main()

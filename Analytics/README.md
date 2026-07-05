@@ -1,6 +1,6 @@
 # Analytics Model Guide
 
-Last updated: 2026-06-05
+Last updated: 2026-07-04
 
 This folder is the modeling layer for the penalty-kill project. It turns NHL
 play-by-play and MoneyPuck CSV data into validation reports, model outputs, and
@@ -27,12 +27,25 @@ The active expansion path lives in `moneypuck/`, `models_v2/`, and
 `run_models_v2.py`. It imports MoneyPuck downloadable CSVs into `mp_*` tables
 and writes `models/output/models_v2_run_*.json` for the API and frontend.
 
+The v2 architecture is split by responsibility:
+
+- `moneypuck/`: source discovery, CSV import, schema, and validation.
+- `models_v2/moneypuck_pk_models.py`: core PK shot, goalie, fatigue, and
+  player-season models.
+- `models_v2/special_teams_matchups.py`: PP attack profiles, PK leak profiles,
+  matchup cards, and aggregate heat-map bins.
+- `models_v2/player_tags.py`: dynamic player passport tags with reasons,
+  metrics, confidence, sample notes, and caveats.
+- `models_v2/common.py`: shared JSON-safe DataFrame output helpers.
+
 The v2 scouting layer now includes:
 
 - season-specific skater and goalie views;
 - empirical-Bayes PK player impact estimates with approximate uncertainty;
 - trust labels such as `Strong signal`, `Useful signal`, and `Too noisy`;
-- similar-player groups based on role and outcome aggregates.
+- similar-player groups based on role and outcome aggregates;
+- auditable player tags that separate strengths, risks, style, and trust;
+- inferred PP attack and PK leak profiles from MoneyPuck shot geometry.
 
 For commands and model definitions, see `Analytics/moneypuck/README.md` and
 `Analytics/models_v2/README.md`.
@@ -245,7 +258,11 @@ Interpretation: this is a shot-block profile, not a net-front coverage model. It
 2. DZ PK faceoff wins remain the cleanest legacy tactical signal.
 3. Forcing an OZ faceoff while short-handed looks worse than keeping play alive, on average.
 4. PK offensive-zone forays show positive short-window xG value with limited measured counterattack risk, but the model cannot infer skater commitment.
-5. Legacy player models should be used as event-participant scouting, not as full on-ice impact rankings.
+5. Matchup profiles should be read as style-fit clues, not proof of exact PP or
+   PK formations.
+6. Player tags are rule-based scouting prompts, not complete grades. Clickable
+   tag details should always show the metric, sample, percentile, and caveat.
+7. Legacy player models should be used as event-participant scouting, not as full on-ice impact rankings.
 
 ## Recommended Next Data Upgrades
 

@@ -19,6 +19,8 @@ from models_v2.moneypuck_pk_models import (
     RushSetDefenseModel,
     ShortHandedTwoWayValueModel,
 )
+from models_v2.player_tags import PlayerTaggingModel
+from models_v2.special_teams_matchups import SpecialTeamsMatchupModel
 
 
 logger = logging.getLogger(__name__)
@@ -31,7 +33,9 @@ MODEL_CLASSES = [
     PkFatigueTimingModel,
     ShortHandedTwoWayValueModel,
     BayesianPkPlayerEvaluationModel,
+    PlayerTaggingModel,
     RushSetDefenseModel,
+    SpecialTeamsMatchupModel,
 ]
 
 

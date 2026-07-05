@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from models.model_utils import add_timestamp, export_json
+from models_v2.common import records, top_records
 from moneypuck.features import (
     PK_SHOTS_AGAINST_WHERE,
     PK_SHOTS_FOR_WHERE,
@@ -20,19 +21,6 @@ from moneypuck.features import (
 
 
 logger = logging.getLogger(__name__)
-
-
-def records(df):
-    if df.empty:
-        return []
-    clean = df.replace({np.nan: None})
-    return clean.to_dict("records")
-
-
-def top_records(df, sort_col, ascending=False, count=10):
-    if df.empty or sort_col not in df.columns:
-        return []
-    return records(df.sort_values(sort_col, ascending=ascending).head(count))
 
 
 class PuckMovementGeometryModel:

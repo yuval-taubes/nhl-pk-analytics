@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import logging
 
+import pandas as pd
+
 from db import DatabaseConnection
 from moneypuck.features import PK_SHOTS_AGAINST_WHERE, PK_SHOTS_FOR_WHERE
 
@@ -13,13 +15,13 @@ from moneypuck.features import PK_SHOTS_AGAINST_WHERE, PK_SHOTS_FOR_WHERE
 logger = logging.getLogger(__name__)
 
 
-EXPECTED_LOCAL_ROWS = {
-    "mp_shots": 786244,
-    "mp_team_games": 232170,
-    "mp_skaters_season": 76655,
-    "mp_goalies_season": 8020,
-    "mp_teams_season": 2610,
-}
+VALIDATED_TABLES = [
+    "mp_shots",
+    "mp_team_games",
+    "mp_skaters_season",
+    "mp_goalies_season",
+    "mp_teams_season",
+]
 
 
 def main():
@@ -36,10 +38,23 @@ def main():
 
 def validate(db):
     report = {"tables": {}, "derived": {}, "status": "ok"}
-    for table, expected in EXPECTED_LOCAL_ROWS.items():
-        count = int(db.query_to_df(f"SELECT COUNT(*) AS n FROM {table}")["n"].iloc[0])
-        report["tables"][table] = {"rows": count, "expected_local_rows": expected, "matches_expected": count == expected}
-        if count != expected:
+    for table in VALIDATED_TABLES:
+        stats = db.query_to_df(
+            f"""
+            SELECT
+                COUNT(*) AS rows,
+                MIN(season) AS first_season,
+                MAX(season) AS latest_season
+            FROM {table}
+            """
+        ).iloc[0]
+        count = int(stats["rows"])
+        report["tables"][table] = {
+            "rows": count,
+            "first_season": int(stats["first_season"]) if not pd.isna(stats["first_season"]) else None,
+            "latest_season": int(stats["latest_season"]) if not pd.isna(stats["latest_season"]) else None,
+        }
+        if count == 0:
             report["status"] = "warning"
 
     dupes = db.query_to_df(

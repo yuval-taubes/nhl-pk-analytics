@@ -5,19 +5,24 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 from pathlib import Path
 
-import psycopg2
-from psycopg2.extras import execute_values
-
-from config import DB_CONFIG
-from moneypuck.config import MONEYPUCK_FILES, MONEYPUCK_ROOT, validate_moneypuck_files
+from moneypuck.config import MONEYPUCK_FILE_GROUPS, MONEYPUCK_ROOT, describe_moneypuck_sources, validate_moneypuck_files
 
 
 logger = logging.getLogger(__name__)
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 BATCH_SIZE = 5000
+
+CONFLICT_KEYS = {
+    "mp_shots": ["season", "game_id", "shot_id"],
+    "mp_team_games": ["season", "game_id", "team", "situation"],
+    "mp_skaters_season": ["player_id", "season", "team", "situation"],
+    "mp_goalies_season": ["player_id", "season", "team", "situation"],
+    "mp_teams_season": ["team", "season", "situation"],
+}
 
 
 SHOT_COLUMNS = [
@@ -235,12 +240,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="Truncate mp_* tables before import.")
     parser.add_argument("--skip-shots", action="store_true", help="Skip the large shot file.")
+    parser.add_argument("--describe-sources", action="store_true", help="Print resolved MoneyPuck CSV sources and exit.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    if args.describe_sources:
+        sources = describe_moneypuck_sources()
+        print(json.dumps(sources, indent=2))
+        return sources
+
     missing = validate_moneypuck_files()
     if missing:
         raise FileNotFoundError(f"Missing MoneyPuck files: {missing}")
+
+    import psycopg2
+    from config import DB_CONFIG
 
     with psycopg2.connect(**DB_CONFIG) as conn:
         initialize_schema(conn)
@@ -248,11 +262,21 @@ def main():
             reset_tables(conn)
 
         counts = {
-            "shots_rows": 0 if args.skip_shots else import_csv(conn, "mp_shots", SHOT_COLUMNS, MONEYPUCK_FILES["shots"], map_shot_row),
-            "team_game_rows": import_csv(conn, "mp_team_games", TEAM_GAME_COLUMNS, MONEYPUCK_FILES["team_games"], map_team_game_row),
-            "skater_rows": import_csv(conn, "mp_skaters_season", SKATER_COLUMNS, MONEYPUCK_FILES["skaters"], map_skater_row),
-            "goalie_rows": import_csv(conn, "mp_goalies_season", GOALIE_COLUMNS, MONEYPUCK_FILES["goalies"], map_goalie_row),
-            "team_season_rows": import_csv(conn, "mp_teams_season", TEAM_SEASON_COLUMNS, MONEYPUCK_FILES["teams"], map_team_season_row),
+            "shots_rows": 0
+            if args.skip_shots
+            else import_csv_group(conn, "mp_shots", SHOT_COLUMNS, MONEYPUCK_FILE_GROUPS["shots"], map_shot_row),
+            "team_game_rows": import_csv_group(
+                conn, "mp_team_games", TEAM_GAME_COLUMNS, MONEYPUCK_FILE_GROUPS["team_games"], map_team_game_row
+            ),
+            "skater_rows": import_csv_group(
+                conn, "mp_skaters_season", SKATER_COLUMNS, MONEYPUCK_FILE_GROUPS["skaters"], map_skater_row
+            ),
+            "goalie_rows": import_csv_group(
+                conn, "mp_goalies_season", GOALIE_COLUMNS, MONEYPUCK_FILE_GROUPS["goalies"], map_goalie_row
+            ),
+            "team_season_rows": import_csv_group(
+                conn, "mp_teams_season", TEAM_SEASON_COLUMNS, MONEYPUCK_FILE_GROUPS["teams"], map_team_season_row
+            ),
         }
         with conn.cursor() as cur:
             cur.execute(
@@ -297,12 +321,22 @@ def reset_tables(conn):
     conn.commit()
 
 
+def import_csv_group(conn, table, columns, paths, mapper):
+    total = 0
+    for path in paths:
+        total += import_csv(conn, table, columns, path, mapper)
+    return total
+
+
 def import_csv(conn, table, columns, path, mapper):
+    conflict_keys = CONFLICT_KEYS[table]
+    update_columns = [column for column in columns if column not in conflict_keys]
+    update_clause = ", ".join(f"{column} = EXCLUDED.{column}" for column in update_columns)
     sql = f"""
         INSERT INTO {table} ({", ".join(columns)})
         VALUES %s
-        ON CONFLICT DO NOTHING
-        RETURNING 1
+        ON CONFLICT ({", ".join(conflict_keys)})
+        DO UPDATE SET {update_clause}
     """
     total = 0
     batch = []
@@ -326,10 +360,12 @@ def import_csv(conn, table, columns, path, mapper):
 
 
 def flush(conn, sql, batch):
+    from psycopg2.extras import execute_values
+
     with conn.cursor() as cur:
-        inserted = execute_values(cur, sql, batch, page_size=BATCH_SIZE, fetch=True)
+        execute_values(cur, sql, batch, page_size=BATCH_SIZE)
     conn.commit()
-    return len(inserted)
+    return len(batch)
 
 
 def map_shot_row(row):

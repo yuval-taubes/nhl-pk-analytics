@@ -250,7 +250,9 @@ app.MapGet("/api/analytics/v2/dashboard", (IConfiguration config, IWebHostEnviro
     var fatigue = FindV2Model(run, "PkFatigueTimingModel");
     var twoWay = FindV2Model(run, "ShortHandedTwoWayValueModel");
     var bayesian = FindV2Model(run, "BayesianPkPlayerEvaluationModel");
+    var playerTags = FindV2Model(run, "PlayerTaggingModel");
     var rushSet = FindV2Model(run, "RushSetDefenseModel");
+    var matchups = FindV2Model(run, "SpecialTeamsMatchupModel");
 
     var reboundBucket = FindByString(movement?["bucket_summary"], "movement_bucket", "rebound");
     var northSouthBucket = FindByString(movement?["bucket_summary"], "movement_bucket", "north_south_downhill");
@@ -346,22 +348,30 @@ app.MapGet("/api/analytics/v2/dashboard", (IConfiguration config, IWebHostEnviro
         },
         movementRows = movement?["bucket_summary"] ?? new JsonArray(),
         aftershockTeams = TakeArray(aftershock?["highest_aftershock_teams"], 8),
-        goalieControl = TakeTopPerSeason(goalie?["goalies"], "control_score", descending: true, count: 8),
-        reboundLeakWatch = TakeTopPerSeason(goalie?["goalies"], "rebounds_allowed_above_expected_per100", descending: true, count: 8),
+        goalieControl = TakeTopPerSeason(goalie?["goalies"], "control_score", descending: true, count: 4),
+        reboundLeakWatch = TakeTopPerSeason(goalie?["goalies"], "rebounds_allowed_above_expected_per100", descending: true, count: 4),
         fatigueRows = fatigue?["defending_average_toi"] ?? new JsonArray(),
         penaltyTimingRows = fatigue?["penalty_elapsed"] ?? new JsonArray(),
-        twoWayLeaders = TakeTopPerSeason(twoWay?["players"], "two_way_net_xg_per60", descending: true, count: 12),
+        twoWayLeaders = TakeTopPerSeason(twoWay?["players"], "two_way_net_xg_per60", descending: true, count: 6),
         offenseWithoutLeakage = TakeTopPerSeason(
             twoWay?["players"],
             "two_way_net_xg_per60",
             descending: true,
-            count: 12,
+            count: 6,
             predicate: player => NumberValue(player?["offense_percentile"]) >= 70 && NumberValue(player?["defense_percentile"]) >= 45),
-        trustedPkImpact = TakeTopPerSeason(bayesian?["trusted_pk_impact"], "true_talent_pk_impact_per60", descending: true, count: 12),
-        highUpsideNoisy = TakeTopPerSeason(bayesian?["high_upside_noisy"], "true_talent_pk_impact_per60", descending: true, count: 12),
-        playerSimilarityGroups = TakeTopPerSeason(bayesian?["similarity_groups"], "true_talent_pk_impact_per60", descending: true, count: 6),
-        scoutingSeasons = BuildSeasonArray(twoWay?["seasons"], goalie?["seasons"], bayesian?["seasons"]),
+        trustedPkImpact = TakeTopPerSeason(bayesian?["trusted_pk_impact"], "true_talent_pk_impact_per60", descending: true, count: 6),
+        highUpsideNoisy = TakeTopPerSeason(bayesian?["high_upside_noisy"], "true_talent_pk_impact_per60", descending: true, count: 6),
+        playerSimilarityGroups = TakeTopPerSeason(bayesian?["similarity_groups"], "true_talent_pk_impact_per60", descending: true, count: 3),
+        playerTagProfiles = TakePlayerTagProfiles(playerTags?["player_profiles"], count: 4),
+        playerTagDictionary = playerTags?["tag_dictionary"] ?? new JsonArray(),
+        scoutingSeasons = BuildSeasonArray(twoWay?["seasons"], goalie?["seasons"], bayesian?["seasons"], playerTags?["seasons"]),
         rushSetSummary = rushSet?["summary"] ?? new JsonArray(),
+        leagueAttackTypes = TakeLatestSeasonTop(matchups?["league_attack_types"], "xg", descending: true, count: 8),
+        ppAttackProfiles = TakeTeamProfilesPerSeason(matchups?["pp_attack_profiles"], "style_score", teamsPerSeason: 6, rowsPerTeam: 3),
+        pkLeakProfiles = TakeLatestSeasonTop(matchups?["pk_leak_profiles"], "style_score", descending: true, count: 24),
+        matchupCards = TakeArray(matchups?["matchup_cards"], 24),
+        leaguePkDangerHeatmap = TakeArray(matchups?["league_pk_danger_heatmap"], 50),
+        teamShotMaps = TakeTeamShotMaps(matchups?["team_shot_maps"], latestSeasonTeams: 16, historySeasonTeams: 4, latestRowsPerTeamProfile: 7, historyRowsPerTeamProfile: 4),
         modelCards = run["models"]?.AsObject()
             .Select(model => ToModelCard(model.Key, model.Value))
             .ToArray() ?? [],
@@ -400,7 +410,7 @@ static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRunPattern(ICon
     var latest = Directory
         .EnumerateFiles(outputPath, filePattern)
         .Select(path => new FileInfo(path))
-        .OrderByDescending(file => file.LastWriteTimeUtc)
+        .OrderByDescending(file => RunTimestamp(file) ?? file.LastWriteTimeUtc)
         .FirstOrDefault();
 
     if (latest is null)
@@ -410,6 +420,26 @@ static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRunPattern(ICon
 
     using var stream = latest.OpenRead();
     return (JsonNode.Parse(stream), latest.FullName, null);
+}
+
+static DateTime? RunTimestamp(FileInfo file)
+{
+    var name = Path.GetFileNameWithoutExtension(file.Name);
+    var parts = name.Split('_');
+    if (parts.Length < 2)
+    {
+        return null;
+    }
+
+    var timestamp = $"{parts[^2]}_{parts[^1]}";
+    return DateTime.TryParseExact(
+        timestamp,
+        "yyyyMMdd_HHmmss",
+        CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeLocal,
+        out var parsed)
+        ? parsed.ToUniversalTime()
+        : null;
 }
 
 static IEnumerable<string> BuildOutputPathCandidates(string? configuredPath, string contentRootPath)
@@ -518,6 +548,258 @@ static JsonArray TakeTopPerSeason(
         {
             output.Add(item?.DeepClone());
         }
+    }
+
+    return output;
+}
+
+static JsonArray TakeLatestSeasonTop(
+    JsonNode? arrayNode,
+    string sortProperty,
+    bool descending,
+    int count,
+    Func<JsonNode?, bool>? predicate = null)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    var rows = array
+        .Where(item => predicate?.Invoke(item) ?? true)
+        .Where(item => IntValue(item?["season"]) > 0)
+        .ToArray();
+    if (rows.Length == 0)
+    {
+        return output;
+    }
+
+    var latestSeason = rows.Max(item => IntValue(item?["season"]));
+    var latestRows = rows.Where(item => IntValue(item?["season"]) == latestSeason);
+    var sorted = descending
+        ? latestRows.OrderByDescending(item => NumberValue(item?[sortProperty]) ?? double.MinValue)
+        : latestRows.OrderBy(item => NumberValue(item?[sortProperty]) ?? double.MaxValue);
+
+    foreach (var item in sorted.Take(count))
+    {
+        output.Add(item?.DeepClone());
+    }
+
+    return output;
+}
+
+static JsonArray TakeTeamProfilesPerSeason(JsonNode? arrayNode, string sortProperty, int teamsPerSeason, int rowsPerTeam)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    var rows = array
+        .Where(item => IntValue(item?["season"]) > 0 && !string.IsNullOrWhiteSpace(StringValue(item?["team"])))
+        .GroupBy(item => IntValue(item?["season"]));
+
+    foreach (var seasonGroup in rows.OrderByDescending(group => group.Key))
+    {
+        var teamGroups = seasonGroup
+            .GroupBy(item => StringValue(item?["team"]))
+            .Select(group => new
+            {
+                Team = group.Key,
+                Rows = group
+                    .OrderByDescending(item => NumberValue(item?[sortProperty]) ?? double.MinValue)
+                    .Take(rowsPerTeam)
+                    .ToArray(),
+                Score = group.Max(item => NumberValue(item?[sortProperty]) ?? double.MinValue),
+            })
+            .OrderByDescending(group => group.Score)
+            .Take(teamsPerSeason);
+
+        foreach (var teamGroup in teamGroups)
+        {
+            foreach (var item in teamGroup.Rows)
+            {
+                output.Add(item?.DeepClone());
+            }
+        }
+    }
+
+    return output;
+}
+
+static JsonArray TakeTeamShotMaps(
+    JsonNode? arrayNode,
+    int latestSeasonTeams,
+    int historySeasonTeams,
+    int latestRowsPerTeamProfile,
+    int historyRowsPerTeamProfile)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    var rows = array
+        .Where(item => IntValue(item?["season"]) > 0
+            && !string.IsNullOrWhiteSpace(StringValue(item?["team"]))
+            && !string.IsNullOrWhiteSpace(StringValue(item?["profile_type"])))
+        .GroupBy(item => IntValue(item?["season"]));
+
+    var orderedSeasons = rows.OrderByDescending(group => group.Key).ToArray();
+    var latestSeason = orderedSeasons.FirstOrDefault()?.Key;
+
+    foreach (var seasonGroup in orderedSeasons)
+    {
+        var isLatestSeason = latestSeason.HasValue && seasonGroup.Key == latestSeason.Value;
+        var teamsPerSeason = isLatestSeason ? latestSeasonTeams : historySeasonTeams;
+        var rowsPerTeamProfile = isLatestSeason ? latestRowsPerTeamProfile : historyRowsPerTeamProfile;
+        var teamScores = seasonGroup
+            .GroupBy(item => StringValue(item?["team"]))
+            .Select(group => new
+            {
+                Team = group.Key,
+                Score = group.Max(item => NumberValue(item?["map_score"]) ?? NumberValue(item?["xg"]) ?? double.MinValue),
+            })
+            .OrderByDescending(group => group.Score)
+            .Take(teamsPerSeason)
+            .Select(group => group.Team)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var profileGroups = seasonGroup
+            .Where(item => teamScores.Contains(StringValue(item?["team"])))
+            .GroupBy(item => $"{StringValue(item?["team"])}|{StringValue(item?["profile_type"])}");
+
+        foreach (var profileGroup in profileGroups)
+        {
+            var sorted = profileGroup
+                .OrderByDescending(item => NumberValue(item?["map_score"]) ?? NumberValue(item?["xg"]) ?? double.MinValue)
+                .Take(rowsPerTeamProfile);
+
+            foreach (var item in sorted)
+            {
+                output.Add(ToCompactShotMapBin(item));
+            }
+        }
+    }
+
+    return output;
+}
+
+static JsonObject ToCompactShotMapBin(JsonNode? item)
+{
+    return new JsonObject
+    {
+        ["season"] = IntValue(item?["season"]),
+        ["team"] = StringValue(item?["team"]),
+        ["profile_type"] = StringValue(item?["profile_type"]),
+        ["attack_type"] = StringValue(item?["attack_type"]),
+        ["x_bin"] = IntValue(item?["x_bin"]),
+        ["y_bin"] = IntValue(item?["y_bin"]),
+        ["rink_x"] = NumberValue(item?["rink_x"]),
+        ["rink_y"] = NumberValue(item?["rink_y"]),
+        ["shots"] = IntValue(item?["shots"]),
+        ["xg"] = NumberValue(item?["xg"]),
+        ["avg_xg"] = NumberValue(item?["avg_xg"]),
+        ["xg_share"] = NumberValue(item?["xg_share"]),
+        ["shot_share"] = NumberValue(item?["shot_share"]),
+        ["goal_rate"] = NumberValue(item?["goal_rate"]),
+        ["rebound_rate"] = NumberValue(item?["rebound_rate"]),
+        ["royal_road_rate"] = NumberValue(item?["royal_road_rate"]),
+        ["map_score"] = NumberValue(item?["map_score"]),
+    };
+}
+
+static JsonArray TakePlayerTagProfiles(JsonNode? arrayNode, int count)
+{
+    var output = new JsonArray();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return output;
+    }
+
+    var rows = array
+        .Where(item => IntValue(item?["season"]) > 0)
+        .GroupBy(item => IntValue(item?["season"]));
+
+    foreach (var group in rows.OrderByDescending(group => group.Key))
+    {
+        var sorted = group.OrderByDescending(item => NumberValue(item?["true_talent_pk_impact_per60"]) ?? double.MinValue);
+        foreach (var item in sorted.Take(count))
+        {
+            output.Add(ToCompactPlayerTagProfile(item));
+        }
+    }
+
+    return output;
+}
+
+static JsonObject ToCompactPlayerTagProfile(JsonNode? item)
+{
+    return new JsonObject
+    {
+        ["player_id"] = IntValue(item?["player_id"]),
+        ["name"] = StringValue(item?["name"]),
+        ["position"] = StringValue(item?["position"]),
+        ["season"] = IntValue(item?["season"]),
+        ["teams"] = StringValue(item?["teams"]),
+        ["ice_time"] = NumberValue(item?["ice_time"]),
+        ["games_played"] = IntValue(item?["games_played"]),
+        ["on_ice_sh_xg_for_per60"] = NumberValue(item?["on_ice_sh_xg_for_per60"]),
+        ["on_ice_xga_per60"] = NumberValue(item?["on_ice_xga_per60"]),
+        ["two_way_net_xg_per60"] = NumberValue(item?["two_way_net_xg_per60"]),
+        ["individual_sh_xg_per60"] = NumberValue(item?["individual_sh_xg_per60"]),
+        ["shot_attempt_share"] = NumberValue(item?["shot_attempt_share"]),
+        ["blocks_per60"] = NumberValue(item?["blocks_per60"]),
+        ["penalty_draw_minus_take_per60"] = NumberValue(item?["penalty_draw_minus_take_per60"]),
+        ["true_talent_pk_impact_per60"] = NumberValue(item?["true_talent_pk_impact_per60"]),
+        ["impact_lower_90"] = NumberValue(item?["impact_lower_90"]),
+        ["impact_upper_90"] = NumberValue(item?["impact_upper_90"]),
+        ["trust_label"] = StringValue(item?["trust_label"]),
+        ["trust_level"] = StringValue(item?["trust_level"]),
+        ["sample_trust"] = StringValue(item?["sample_trust"]),
+        ["sample_trust_label"] = StringValue(item?["sample_trust_label"]),
+        ["sample_trust_sentence"] = StringValue(item?["sample_trust_sentence"]),
+        ["supporting_signal_count"] = IntValue(item?["supporting_signal_count"]),
+        ["rate_sensitive_tag_count"] = IntValue(item?["rate_sensitive_tag_count"]),
+        ["summary_sentence"] = StringValue(item?["summary_sentence"]),
+        ["tags"] = CompactTags(item?["tags"], 6),
+        ["top_strengths"] = CompactTags(item?["top_strengths"], 3),
+        ["main_risks"] = CompactTags(item?["main_risks"], 3),
+    };
+}
+
+static JsonArray CompactTags(JsonNode? tagsNode, int count)
+{
+    var output = new JsonArray();
+    var tags = tagsNode?.AsArray();
+    if (tags is null)
+    {
+        return output;
+    }
+
+    foreach (var tag in tags.Take(count))
+    {
+        output.Add(new JsonObject
+        {
+            ["tag_id"] = StringValue(tag?["tag_id"]),
+            ["label"] = StringValue(tag?["label"]),
+            ["category"] = StringValue(tag?["category"]),
+            ["confidence"] = StringValue(tag?["confidence"]),
+            ["sample_confidence"] = StringValue(tag?["sample_confidence"]),
+            ["tag_strength"] = StringValue(tag?["tag_strength"]),
+            ["priority_label"] = StringValue(tag?["priority_label"]),
+            ["reason"] = StringValue(tag?["reason"]),
+            ["sample_size_note"] = StringValue(tag?["sample_size_note"]),
+            ["higher_is_better"] = BoolValue(tag?["higher_is_better"]),
+            ["league_percentile"] = NumberValue(tag?["league_percentile"]),
+        });
     }
 
     return output;
@@ -647,6 +929,23 @@ static int IntValue(JsonNode? node)
     catch (InvalidOperationException)
     {
         return (int)Math.Round(NumberValue(node) ?? 0);
+    }
+}
+
+static bool BoolValue(JsonNode? node)
+{
+    if (node is null)
+    {
+        return false;
+    }
+
+    try
+    {
+        return node.GetValue<bool>();
+    }
+    catch (InvalidOperationException)
+    {
+        return bool.TryParse(StringValue(node), out var value) && value;
     }
 }
 

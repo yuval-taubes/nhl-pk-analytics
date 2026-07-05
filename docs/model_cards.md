@@ -105,3 +105,27 @@ intended to keep portfolio readers from over-interpreting exploratory outputs.
 - Main limitations: descriptive public-data estimates, not full RAPM or video
   scouting grades.
 - Invalid use: contract/player-value ranking without broader context.
+
+## MoneyPuck V2: Dynamic Player Tags
+
+- Question: Which explainable player-season traits are worth a scouting look?
+- Unit: MoneyPuck 4-on-5 skater season aggregate.
+- Outcome: fired tags with category, tag strength, sample confidence, reason,
+  trigger metrics, sample note, percentile, and caveat.
+- Current status: player passport layer in the Scouting Lab.
+- Main limitations: tags use public season aggregates, not shift-level tracking,
+  puck recoveries, or manual video labels.
+- Invalid use: treating tags as complete player grades or claiming unsupported
+  roles such as rebound cleanup without on-ice recovery data.
+
+## MoneyPuck V2: Special Teams Matchups
+
+- Question: Which PP attack styles line up against which PK leak profiles?
+- Unit: team-season by inferred attack/leak type.
+- Outcome: xG share, average xG, style index, matchup score, and aggregate
+  rink heat-map bins used by the tactical matchup board and generated brief.
+- Current status: primary Scouting Lab matchup layer.
+- Main limitations: inferred from MoneyPuck shot and last-event geometry, not
+  tracking data, coaching systems, or manual formation tags.
+- Invalid use: claiming a team plays a specific PP or PK formation without film
+  or tracking support.

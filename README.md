@@ -9,7 +9,9 @@ hockey answers.
 The current 2.0 version is built around MoneyPuck shot quality. It focuses on
 why penalty kills break down: puck movement before the shot, rebounds, failed
 recoveries after blocks, goalie control, fatigue, and season-by-season player
-profiles.
+profiles. The preview site now centers that work in a Special Teams Scouting
+Lab: PP attack tendencies, PK leak profiles, a tactical matchup board, generated
+scouting briefs, and player passports with sample/trust caveats.
 
 ## What This Demonstrates
 
@@ -34,7 +36,8 @@ The project has four main pieces:
 For a plain-English guide to what the current models say, see `Analytics/README.md`.
 
 For a reviewer-friendly path through the project, see `docs/demo.md`,
-`docs/model_cards.md`, and `docs/validation_status.md`.
+`docs/model_cards.md`, `docs/validation_status.md`, and
+`docs/moneypuck_v2_architecture.md`.
 
 The goal is not to claim every hockey question is solved. It is to make the
 pipeline, strongest findings, and trust boundaries easy to inspect.
@@ -69,6 +72,10 @@ Implemented:
 - MoneyPuck v2 model runner with puck-movement, goalie-control, fatigue,
   after-block, rush/set, empirical-Bayes player impact, and similar-player
   scouting outputs.
+- Special-teams matchup model with PP attack profiles, PK leak profiles,
+  matchup cards, and compact rink heat-map bins.
+- React scouting workflow for selected PP-vs-PK matchups, generated scouting
+  briefs, dynamic player passports, and secondary player/goalie discovery.
 - GitHub Actions CI for .NET, frontend, and Python compile checks.
 - GitHub Pages deployment for the interactive frontend.
 - Static real-data frontend snapshot at `Frontend/public/data/dashboard.json`.
@@ -105,6 +112,13 @@ The MoneyPuck v2 path imports downloadable CSV files into `mp_*` tables and
 writes `models_v2_run_*.json` files. The live API serves compact dashboard rows
 for each season and keeps full model output behind detail endpoints and local
 files. The older NHL API models remain as background context.
+
+Current local MoneyPuck data is expected outside Git under
+`D:\Hockey-data project` by default. The importer now prefers the full
+`shots_2007-2024` historical shot file, adds 2025 season aggregate skater,
+goalie, and team files when present, and can pick up a current-season shot file
+from `shots_2025\shots_2025.csv`. The current-season shot file is the missing
+piece for 2025-2026 heat maps and matchup models.
 
 ## Prerequisites
 
@@ -247,6 +261,14 @@ export NHL_DB_PASSWORD=your_password
 ./venv/Scripts/python.exe run_models_v2.py
 ```
 
+To point the MoneyPuck importer at another download folder:
+
+```powershell
+$env:MONEYPUCK_DATA_ROOT = "D:\Hockey-data project"
+```
+
+The expected local CSV layout is documented in `Analytics/moneypuck/README.md`.
+
 Generated reports and model artifacts are written to ignored local output folders such as `Analytics/runs/` and `Analytics/models/trained/`.
 
 ## Frontend Commands
@@ -329,7 +351,10 @@ Medium term:
 
 - Add goal-against sequence mining.
 - Cluster recurring PK breakdown patterns.
-- Build model reports for entry denial, clear failures, shot suppression, and net-front defense.
+- Build model reports for entry denial, clear failures, shot suppression, and
+  net-front defense.
+- Expand special-teams matchup previews into exportable scouting-report
+  workflows.
 - Expand the API layer beyond latest-run JSON into filterable database-backed reports.
 
 Long term:

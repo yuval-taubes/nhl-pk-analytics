@@ -2,7 +2,7 @@
 
 React + TypeScript site for the NHL penalty kill analytics project.
 
-This app is intentionally shaped like an interactive hockey research publication rather than a conventional dashboard: a visual landing page, visual model sections, season-by-season scouting summaries, and a clear data-honesty section.
+This app is intentionally shaped like an interactive hockey research publication rather than a conventional dashboard: a visual landing page, visual model sections, a Special Teams Scouting Lab, and a clear data-honesty section.
 
 Published site:
 
@@ -77,7 +77,9 @@ npm run dev
 - Landing page with a rink-trace hero on desktop and a lighter mobile layout
 - Model index at `#/models`
 - Individual legacy model pages at `#/models/{modelNumber}`
-- MoneyPuck v2 scouting profiles at `#/scouting`, with a season selector
+- Special Teams Scouting Lab at `#/scouting`, with season/team selectors,
+  matchup board, generated Scouting Brief, player passports, and secondary
+  player/goalie discovery
 - About/project pipeline page at `#/about`
 - Data honesty page at `#/data-honesty`
 - Live MoneyPuck v2 takeaways, tactical rows, and player leaders from `GET /api/analytics/v2/dashboard`
@@ -101,6 +103,6 @@ The UI should feel like a hockey operations research piece:
 
 1. Replace hash routing with a formal router if the site grows.
 2. Add richer graphics for each legacy model page using the raw model JSON endpoints.
-3. Add team filters once the API supports filtered outputs.
-4. Add model diagnostics pages for coordinate, possession, and xG validation.
-5. Add rendered screenshot checks to CI or the launch checklist.
+3. Add model diagnostics pages for coordinate, possession, and xG validation.
+4. Add rendered screenshot checks to CI or the launch checklist.
+5. Expand Scouting Brief export formats once the text workflow is stable.

@@ -2332,11 +2332,11 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
   const weakSide = primary.y < 230 ? rightFlank : leftFlank
   const strongSide = primary.y < 230 ? leftFlank : rightFlank
   const finish = { x: clampNumber(primary.x, 500, 778), y: clampNumber(primary.y, 112, 348) }
-  let routePoints: { x: number; y: number }[] = []
-  let involvedPpRoles: TacticalSkater['role'][] = []
-  let stressedPkRoles: TacticalSkater['role'][] = []
-  let title = mode === 'mismatch' ? 'Exploit play' : mode === 'pp_attack' ? 'Creation look' : 'Allowed-danger look'
-  let detail = `${ppTeam} can turn this into a direct pass-lane read instead of a generic heat-map spot.`
+  let routePoints: { x: number; y: number }[]
+  let involvedPpRoles: TacticalSkater['role'][]
+  let stressedPkRoles: TacticalSkater['role'][]
+  const title = mode === 'mismatch' ? 'Exploit play' : mode === 'pp_attack' ? 'Creation look' : 'Allowed-danger look'
+  let detail: string
 
   if (primary.id === 'netfront') {
     routePoints = [point, strongSide, netFront]

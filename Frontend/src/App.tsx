@@ -1503,6 +1503,10 @@ function ScoutingLab({
     }),
     [activeSeason, activePkTeam, activePpTeam, mapMode, pkBins, ppBins, seasonShotMaps, selectedZoneId],
   )
+  const matchupPassports = useMemo(
+    () => selectMatchupPassports(playerPassports, activePkTeam, mapState.primaryPocket?.id),
+    [activePkTeam, mapState.primaryPocket?.id, playerPassports],
+  )
 
   return (
     <section className="scouting-lab" aria-label="Special teams matchup lab">
@@ -1571,7 +1575,7 @@ function ScoutingLab({
         mapState={mapState}
         mode={mapMode}
         season={activeSeason}
-        playerPassports={playerPassports.slice(0, 5)}
+        playerPassports={matchupPassports}
       />
     </section>
   )
@@ -1654,9 +1658,9 @@ function ScoutingBriefPanel({
       </section>
 
       <section className="brief-passports">
-        <span>Player passport notes</span>
+        <span>{brief.playerNoteHeading}</span>
         {brief.playerNotes.length === 0 ? (
-          <p>No player passports are available for this season.</p>
+          <p>{brief.playerNoteEmpty}</p>
         ) : (
           <ul>
             {brief.playerNotes.map((note) => (
@@ -1997,6 +2001,10 @@ function buildScoutingBrief(
       read: passportScoutingRead(profile, sample, archetype, strength, risk),
     }
   })
+  const playerNoteHeading = `${state.pkTeam || 'PK'} PK player passport notes`
+  const playerNoteEmpty = state.pkTeam
+    ? `No ${state.pkTeam} PK player passports are available for this season.`
+    : 'No PK player passports are available for this selected matchup.'
   const caveats = [
     'Based on shot and last-event geometry, not full player tracking.',
     'The tactical route is a simplified play suggestion, not a tracked sequence.',
@@ -2024,7 +2032,7 @@ function buildScoutingBrief(
     ...zoneRankings,
     '',
     'PLAYER PASSPORT NOTES',
-    ...(playerNotes.length ? playerNotes.map((note) => `- ${note.name} (${note.meta}): ${note.read}`) : ['- No player passports are available for this season.']),
+    ...(playerNotes.length ? playerNotes.map((note) => `- ${note.name} (${note.meta}): ${note.read}`) : [`- ${playerNoteEmpty}`]),
     '',
     'CAVEATS',
     ...caveats.map((caveat) => `- ${caveat}`),
@@ -2039,6 +2047,8 @@ function buildScoutingBrief(
     },
     recommendedAttack: attack,
     evidence,
+    playerNoteHeading,
+    playerNoteEmpty,
     playerNotes,
     caveats,
     text,
@@ -2098,6 +2108,55 @@ function teamOptionsForShotMaps(shotMaps: TeamShotMapBin[], season: number | und
     .sort((left, right) => right[1] - left[1])
     .slice(0, 16)
     .map(([team]) => team)
+}
+
+function selectMatchupPassports(profiles: PlayerTagProfile[], pkTeam: string, zoneId?: string) {
+  return profiles
+    .filter((profile) => profileBelongsToTeam(profile, pkTeam))
+    .sort((a, b) => {
+      const zoneDiff = exploitRelevanceScore(b, zoneId) - exploitRelevanceScore(a, zoneId)
+      const sampleDiff = sampleTrustScore(b) - sampleTrustScore(a)
+      const signalDiff = (b.supporting_signal_count ?? b.tags.length) - (a.supporting_signal_count ?? a.tags.length)
+      const minutesDiff = (b.ice_time ?? 0) - (a.ice_time ?? 0)
+      const impactDiff = b.true_talent_pk_impact_per60 - a.true_talent_pk_impact_per60
+      return zoneDiff || sampleDiff || signalDiff || minutesDiff || impactDiff
+    })
+    .slice(0, 5)
+}
+
+function profileBelongsToTeam(profile: PlayerTagProfile, team: string) {
+  if (!team) return false
+  return profile.teams
+    .split(/[/,| ]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+    .includes(team.toUpperCase())
+}
+
+function sampleTrustScore(profile: PlayerTagProfile) {
+  const trust = sampleTrustForProfile(profile)
+  if (trust.trustLevel === 'high') return 3
+  if (trust.trustLevel === 'medium') return 2
+  return 1
+}
+
+function exploitRelevanceScore(profile: PlayerTagProfile, zoneId?: string) {
+  const zoneTerms: Record<string, string[]> = {
+    netfront: ['block', 'clear', 'low-event', 'penalty', 'risk', 'defender'],
+    low_slot: ['low-event', 'slot', 'block', 'clear', 'pressure', 'defender'],
+    bumper: ['low-event', 'slot', 'pressure', 'defender', 'block'],
+    left_flank: ['pressure', 'counterattack', 'low-event', 'penalty'],
+    right_flank: ['pressure', 'counterattack', 'low-event', 'penalty'],
+    backdoor: ['pressure', 'counterattack', 'low-event', 'penalty', 'defender'],
+    point: ['block', 'clear', 'pressure', 'low-event'],
+  }
+  const terms = zoneTerms[zoneId ?? ''] ?? []
+  if (terms.length === 0) return 0
+  const haystack = profile.tags
+    .map((tag) => `${tag.tag_id} ${tag.label} ${tag.category} ${tag.reason}`)
+    .join(' ')
+    .toLowerCase()
+  return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0)
 }
 
 function ppTendencyLabelFor(index: number) {
@@ -2315,6 +2374,14 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
   const netFront = { x: 758, y: 230 }
   const backdoor = { x: 742, y: 316 }
   const net = { x: 824, y: 230 }
+  const highWall = { x: 560, y: 104 }
+  const lowWall = { x: 560, y: 356 }
+  const highGap = { x: 710, y: 138 }
+  const lowGap = { x: 710, y: 322 }
+  const highMiddle = { x: 642, y: 158 }
+  const lowMiddle = { x: 642, y: 302 }
+  const highBoardSeam = { x: 728, y: 104 }
+  const lowBoardSeam = { x: 728, y: 356 }
   if (!primary) {
     const fallbackPoints = [leftFlank, bumper, netFront]
     return {
@@ -2332,43 +2399,60 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
   const weakSide = primary.y < 230 ? rightFlank : leftFlank
   const strongSide = primary.y < 230 ? leftFlank : rightFlank
   const finish = { x: clampNumber(primary.x, 500, 778), y: clampNumber(primary.y, 112, 348) }
-  let routePoints: { x: number; y: number }[]
+  let routeCandidates: { x: number; y: number }[][]
   let involvedPpRoles: TacticalSkater['role'][]
   let stressedPkRoles: TacticalSkater['role'][]
   const title = mode === 'mismatch' ? 'Exploit play' : mode === 'pp_attack' ? 'Creation look' : 'Allowed-danger look'
   let detail: string
 
   if (primary.id === 'netfront') {
-    routePoints = [point, strongSide, netFront]
+    routeCandidates = strongSide === leftFlank
+      ? [[point, strongSide, netFront], [point, highWall, highGap, netFront], [point, lowWall, lowGap, netFront]]
+      : [[point, strongSide, netFront], [point, lowWall, lowGap, netFront], [point, highWall, highGap, netFront]]
     involvedPpRoles = ['point', strongSide === leftFlank ? 'left_flank' : 'right_flank', 'net_front']
     stressedPkRoles = ['d1', 'd2']
     detail = `${ppTeam} can use a point or flank shot lane to create second contact at the net-front rebound area.`
   } else if (primary.id === 'low_slot') {
-    routePoints = [strongSide, bumper, lowSlot]
+    routeCandidates = strongSide === leftFlank
+      ? [[strongSide, bumper, lowSlot], [strongSide, highWall, bumper, lowSlot], [strongSide, highMiddle, lowSlot], [strongSide, lowMiddle, lowSlot]]
+      : [[strongSide, bumper, lowSlot], [strongSide, lowWall, bumper, lowSlot], [strongSide, lowMiddle, lowSlot], [strongSide, highMiddle, lowSlot]]
     involvedPpRoles = [strongSide === leftFlank ? 'left_flank' : 'right_flank', 'bumper', 'net_front']
     stressedPkRoles = ['f1', 'd1', 'd2']
     detail = `${ppTeam} should move the puck from the half-wall into the bumper or low slot before the PK can collapse.`
   } else if (primary.id === 'bumper') {
-    routePoints = [point, strongSide, bumper]
+    routeCandidates = strongSide === leftFlank
+      ? [[point, strongSide, bumper], [point, highWall, bumper], [point, lowWall, bumper]]
+      : [[point, strongSide, bumper], [point, lowWall, bumper], [point, highWall, bumper]]
     involvedPpRoles = ['point', strongSide === leftFlank ? 'left_flank' : 'right_flank', 'bumper']
     stressedPkRoles = ['f1', 'f2']
     detail = `${ppTeam} can use the flank-to-bumper touch as the trigger, then shoot before the middle defender resets.`
   } else if (primary.id === 'left_flank' || primary.id === 'right_flank') {
-    routePoints = [weakSide, point, finish]
+    routeCandidates = [
+      [weakSide, point, finish],
+      [weakSide, { x: 382, y: weakSide.y }, { x: 382, y: finish.y }, finish],
+      [weakSide, { x: 612, y: weakSide.y < 230 ? 100 : 360 }, finish],
+    ]
     involvedPpRoles = [weakSide === leftFlank ? 'left_flank' : 'right_flank', 'point', primary.id === 'left_flank' ? 'left_flank' : 'right_flank']
     stressedPkRoles = primary.id === 'left_flank' ? ['f1', 'd1'] : ['f2', 'd2']
     detail = `${ppTeam} can stress the box with a lateral seam into the ${primary.label.toLowerCase()} one-timer lane.`
   } else if (primary.id === 'backdoor') {
-    routePoints = [strongSide, bumper, backdoor]
+    routeCandidates = strongSide === leftFlank
+      ? [[strongSide, bumper, backdoor], [strongSide, highWall, highBoardSeam, backdoor], [strongSide, highMiddle, backdoor], [strongSide, lowMiddle, backdoor]]
+      : [[strongSide, bumper, backdoor], [strongSide, lowWall, lowBoardSeam, backdoor], [strongSide, lowMiddle, backdoor], [strongSide, highMiddle, backdoor]]
     involvedPpRoles = [strongSide === leftFlank ? 'left_flank' : 'right_flank', 'bumper', 'net_front']
     stressedPkRoles = primary.y < 230 ? ['f2', 'd2'] : ['f1', 'd1']
     detail = `${ppTeam} can pull the PK toward the puck side, then hit the weak-side seam before the low defender recovers.`
   } else {
-    routePoints = [strongSide, point, finish]
+    routeCandidates = [
+      [strongSide, point, finish],
+      [strongSide, strongSide === leftFlank ? highWall : lowWall, finish],
+      [strongSide, strongSide === leftFlank ? lowWall : highWall, finish],
+    ]
     involvedPpRoles = [strongSide === leftFlank ? 'left_flank' : 'right_flank', 'point', 'bumper']
     stressedPkRoles = ['f1', 'f2']
     detail = `${ppTeam} can reset high, force the PK box to expand, and attack the next seam off the point.`
   }
+  const routePoints = chooseTacticalRouteCandidate(routeCandidates, net)
 
   return {
     title,
@@ -2386,6 +2470,49 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
 
 function lanesFromPoints(points: { x: number; y: number }[]) {
   return points.slice(0, -1).map((point, index) => ({ from: point, to: points[index + 1], kind: index === 0 ? 'pass' as const : 'touch' as const }))
+}
+
+const PK_ROUTE_AVOIDANCE = [
+  { x: 540, y: 176, radius: 32 },
+  { x: 540, y: 284, radius: 32 },
+  { x: 686, y: 176, radius: 34 },
+  { x: 686, y: 284, radius: 34 },
+]
+
+function chooseTacticalRouteCandidate(candidates: { x: number; y: number }[][], shotTarget: { x: number; y: number }) {
+  return candidates
+    .map((points, index) => ({ points, score: routeCollisionScore(points, shotTarget) + index * 0.01 }))
+    .sort((a, b) => a.score - b.score)[0]?.points ?? candidates[0] ?? []
+}
+
+function routeCollisionScore(points: { x: number; y: number }[], shotTarget: { x: number; y: number }) {
+  const passScore = points.slice(0, -1).reduce((score, point, index) => (
+    score + segmentCollisionScore(point, points[index + 1], 1)
+  ), 0)
+  const shotScore = points.length > 0
+    ? segmentCollisionScore(points[points.length - 1], shotTarget, 0.8)
+    : 0
+  return passScore + shotScore
+}
+
+function segmentCollisionScore(from: { x: number; y: number }, to: { x: number; y: number }, weight: number) {
+  return PK_ROUTE_AVOIDANCE.reduce((score, defender) => {
+    const distance = distancePointToSegment(defender, from, to)
+    if (distance >= defender.radius) return score
+    return score + (defender.radius - distance + 20) * weight
+  }, 0)
+}
+
+function distancePointToSegment(
+  point: { x: number; y: number },
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+) {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - from.x, point.y - from.y)
+  const t = clampNumber(((point.x - from.x) * dx + (point.y - from.y) * dy) / (dx * dx + dy * dy), 0, 1)
+  return Math.hypot(point.x - (from.x + t * dx), point.y - (from.y + t * dy))
 }
 
 function buildTacticalSkaters(route: TacticalRoute): TacticalSkater[] {

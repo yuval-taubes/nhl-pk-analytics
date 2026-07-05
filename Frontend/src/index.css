@@ -2012,17 +2012,23 @@ h6 {
   filter: drop-shadow(0 0 5px rgba(255, 211, 106, 0.22));
 }
 
-.pattern-lane.touch {
-  stroke: rgba(255, 238, 160, 0.98);
+.pattern-lane.carry {
+  stroke: rgba(255, 211, 106, 0.98);
   stroke-width: 5;
+}
+
+.pattern-lane.pass {
+  stroke: rgba(255, 238, 160, 0.98);
+  stroke-dasharray: 9 7;
+  stroke-width: 4.4;
 }
 
 .pattern-shot-lane {
   stroke: rgba(255, 125, 125, 0.92);
-  stroke-dasharray: 8 7;
-  stroke-width: 3.6;
+  stroke-width: 4;
   marker-end: url("#patternShotArrow");
-  opacity: 0.84;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 5px rgba(255, 125, 125, 0.22));
 }
 
 #patternArrow path {
@@ -2103,6 +2109,19 @@ h6 {
   stroke: rgba(185, 245, 255, 0.44);
   stroke-width: 2;
   stroke-dasharray: 4 5;
+}
+
+.pattern-puck-label {
+  fill: rgba(255, 255, 255, 0.88);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: rgba(5, 8, 13, 0.88);
+  stroke-width: 3px;
+  text-anchor: middle;
 }
 
 .pattern-player {
@@ -2229,6 +2248,29 @@ h6 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.68rem;
   line-height: 1.1;
+}
+
+.legend-line {
+  display: inline-block;
+  width: 1.35rem;
+  height: 0;
+  border-top: 2px solid var(--amber);
+}
+
+.legend-line.pass {
+  border-top-style: dashed;
+}
+
+.legend-line.shot {
+  border-color: rgba(255, 125, 125, 0.94);
+}
+
+.legend-puck {
+  width: 0.48rem;
+  height: 0.48rem;
+  border: 1.5px solid var(--cyan-bright);
+  border-radius: 50%;
+  background: #ffffff;
 }
 
 .pattern-legend b {

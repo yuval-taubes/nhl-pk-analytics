@@ -362,7 +362,12 @@ app.MapGet("/api/analytics/v2/dashboard", (IConfiguration config, IWebHostEnviro
         trustedPkImpact = TakeTopPerSeason(bayesian?["trusted_pk_impact"], "true_talent_pk_impact_per60", descending: true, count: 6),
         highUpsideNoisy = TakeTopPerSeason(bayesian?["high_upside_noisy"], "true_talent_pk_impact_per60", descending: true, count: 6),
         playerSimilarityGroups = TakeTopPerSeason(bayesian?["similarity_groups"], "true_talent_pk_impact_per60", descending: true, count: 3),
-        playerTagProfiles = TakePlayerTagProfiles(playerTags?["player_profiles"], count: 4),
+        playerTagProfiles = TakePlayerTagProfiles(
+            playerTags?["player_profiles"],
+            matchups?["team_shot_maps"],
+            latestSeasonTeams: 16,
+            historySeasonTeams: 4,
+            profilesPerTeam: 1),
         playerTagDictionary = playerTags?["tag_dictionary"] ?? new JsonArray(),
         scoutingSeasons = BuildSeasonArray(twoWay?["seasons"], goalie?["seasons"], bayesian?["seasons"], playerTags?["seasons"]),
         rushSetSummary = rushSet?["summary"] ?? new JsonArray(),
@@ -715,7 +720,12 @@ static JsonObject ToCompactShotMapBin(JsonNode? item)
     };
 }
 
-static JsonArray TakePlayerTagProfiles(JsonNode? arrayNode, int count)
+static JsonArray TakePlayerTagProfiles(
+    JsonNode? arrayNode,
+    JsonNode? teamShotMapsNode,
+    int latestSeasonTeams,
+    int historySeasonTeams,
+    int profilesPerTeam)
 {
     var output = new JsonArray();
     var array = arrayNode?.AsArray();
@@ -724,20 +734,84 @@ static JsonArray TakePlayerTagProfiles(JsonNode? arrayNode, int count)
         return output;
     }
 
+    var teamsBySeason = TeamShotMapTeamsBySeason(teamShotMapsNode, latestSeasonTeams, historySeasonTeams);
     var rows = array
         .Where(item => IntValue(item?["season"]) > 0)
         .GroupBy(item => IntValue(item?["season"]));
 
     foreach (var group in rows.OrderByDescending(group => group.Key))
     {
-        var sorted = group.OrderByDescending(item => NumberValue(item?["true_talent_pk_impact_per60"]) ?? double.MinValue);
-        foreach (var item in sorted.Take(count))
+        if (!teamsBySeason.TryGetValue(group.Key, out var seasonTeams))
         {
-            output.Add(ToCompactPlayerTagProfile(item));
+            continue;
+        }
+
+        var teamGroups = group
+            .Where(item => ProfileTeamsIntersect(StringValue(item?["teams"]), seasonTeams))
+            .GroupBy(item => StringValue(item?["teams"]));
+
+        foreach (var teamGroup in teamGroups.OrderBy(teamGroup => teamGroup.Key))
+        {
+            var sorted = teamGroup
+                .OrderByDescending(item => NumberValue(item?["supporting_signal_count"]) ?? 0)
+                .ThenByDescending(item => NumberValue(item?["ice_time"]) ?? 0)
+                .ThenByDescending(item => NumberValue(item?["true_talent_pk_impact_per60"]) ?? double.MinValue);
+            foreach (var item in sorted.Take(profilesPerTeam))
+            {
+                output.Add(ToCompactPlayerTagProfile(item));
+            }
         }
     }
 
     return output;
+}
+
+static bool ProfileTeamsIntersect(string profileTeams, HashSet<string> selectedTeams)
+{
+    if (string.IsNullOrWhiteSpace(profileTeams) || selectedTeams.Count == 0)
+    {
+        return false;
+    }
+
+    var tokens = profileTeams
+        .Split(new[] { '/', ',', '|', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return tokens.Any(selectedTeams.Contains);
+}
+
+static Dictionary<int, HashSet<string>> TeamShotMapTeamsBySeason(JsonNode? arrayNode, int latestSeasonTeams, int historySeasonTeams)
+{
+    var result = new Dictionary<int, HashSet<string>>();
+    var array = arrayNode?.AsArray();
+    if (array is null)
+    {
+        return result;
+    }
+
+    var rows = array
+        .Where(item => IntValue(item?["season"]) > 0 && !string.IsNullOrWhiteSpace(StringValue(item?["team"])))
+        .GroupBy(item => IntValue(item?["season"]))
+        .OrderByDescending(group => group.Key)
+        .ToArray();
+    var latestSeason = rows.FirstOrDefault()?.Key;
+
+    foreach (var seasonGroup in rows)
+    {
+        var teamsPerSeason = latestSeason.HasValue && seasonGroup.Key == latestSeason.Value ? latestSeasonTeams : historySeasonTeams;
+        var teams = seasonGroup
+            .GroupBy(item => StringValue(item?["team"]))
+            .Select(group => new
+            {
+                Team = group.Key,
+                Score = group.Max(item => NumberValue(item?["map_score"]) ?? NumberValue(item?["xg"]) ?? double.MinValue),
+            })
+            .OrderByDescending(group => group.Score)
+            .Take(teamsPerSeason)
+            .Select(group => group.Team)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        result[seasonGroup.Key] = teams;
+    }
+
+    return result;
 }
 
 static JsonObject ToCompactPlayerTagProfile(JsonNode? item)

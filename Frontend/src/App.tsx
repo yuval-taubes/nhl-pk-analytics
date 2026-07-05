@@ -1371,7 +1371,7 @@ function V2ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
           matchups={matchupCards.slice(0, 5)}
           attackTypes={attackTypes.slice(0, 5)}
           shotMaps={dashboard.teamShotMaps ?? []}
-          playerPassports={playerPassports.slice(0, 6)}
+          playerPassports={playerPassports}
           activeSeason={activeSeason}
         />
       </section>
@@ -1864,11 +1864,16 @@ function AnimatedPatternBoard({ state, mode }: { state: TacticalMapState; mode: 
         ))}
         <circle className="pattern-puck-ring" cx={state.route.puck.x} cy={state.route.puck.y} r="18" />
         <circle className="pattern-puck" cx={state.route.puck.x} cy={state.route.puck.y} r="8" filter="url(#patternGlow)" />
+        <text className="pattern-puck-label" x={state.route.puck.x} y={state.route.puck.y - 25}>PUCK</text>
       </svg>
       <div className="pattern-caption">
         <strong>{state.route.title}</strong>
         <span>{state.route.detail}</span>
-        <div className="pattern-legend" aria-label="Tactical role legend">
+        <div className="pattern-legend" aria-label="Tactical route and role legend">
+          <span><i className="legend-line carry" /> Carry</span>
+          <span><i className="legend-line pass" /> Pass</span>
+          <span><i className="legend-line shot" /> Shot</span>
+          <span><i className="legend-puck" /> Puck/touch</span>
           <span><b>PP</b> P LF RF B NF</span>
           <span><b>PK</b> F1 F2 D1 D2</span>
         </div>
@@ -1915,7 +1920,7 @@ type TacticalSkater = {
 type TacticalRoute = {
   title: string
   detail: string
-  lanes: { from: { x: number; y: number }; to: { x: number; y: number }; kind?: 'pass' | 'touch' }[]
+  lanes: { from: { x: number; y: number }; to: { x: number; y: number }; kind?: 'carry' | 'pass' }[]
   shotLane?: { from: { x: number; y: number }; to: { x: number; y: number } }
   puck: { x: number; y: number }
   touchPoints: { x: number; y: number }[]
@@ -2469,7 +2474,7 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
 }
 
 function lanesFromPoints(points: { x: number; y: number }[]) {
-  return points.slice(0, -1).map((point, index) => ({ from: point, to: points[index + 1], kind: index === 0 ? 'pass' as const : 'touch' as const }))
+  return points.slice(0, -1).map((point, index) => ({ from: point, to: points[index + 1], kind: index === 0 ? 'carry' as const : 'pass' as const }))
 }
 
 const PK_ROUTE_AVOIDANCE = [

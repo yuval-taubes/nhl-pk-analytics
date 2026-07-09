@@ -16,6 +16,7 @@ https://yuval-taubes.github.io/nhl-pk-analytics/
 - React
 - TypeScript
 - Lucide React
+- Playwright for the local scouting smoke check
 
 ## Local Development
 
@@ -40,6 +41,15 @@ cd Frontend
 npm install
 npm run dev
 ```
+
+With the Vite dev server running, the scouting smoke check is:
+
+```powershell
+npm run qa:scouting
+```
+
+It defaults to `http://127.0.0.1:5173/#/scouting` and the Edge browser channel.
+Override with `QA_BASE_URL` or `QA_BROWSER_CHANNEL` when needed.
 
 Git Bash should use forward slashes for the API project path:
 
@@ -78,8 +88,8 @@ npm run dev
 - Model index at `#/models`
 - Individual legacy model pages at `#/models/{modelNumber}`
 - Special Teams Scouting Lab at `#/scouting`, with season/team selectors,
-  matchup board, generated Scouting Brief, player passports, and secondary
-  player/goalie discovery
+  a current-read strip, actionable matchup examples, matchup board, generated
+  Scouting Brief, player passports, and secondary player/goalie discovery
 - About/project pipeline page at `#/about`
 - Data honesty page at `#/data-honesty`
 - Live MoneyPuck v2 takeaways, tactical rows, and player leaders from `GET /api/analytics/v2/dashboard`

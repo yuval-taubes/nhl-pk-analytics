@@ -1,6 +1,6 @@
 # MoneyPuck V2 Architecture
 
-Last updated: 2026-07-05
+Last updated: 2026-07-08
 
 This note is the working map for the MoneyPuck rebuild. It explains what each
 layer owns, where new data should land, and which parts are ready for the next
@@ -108,7 +108,9 @@ heat-map bins. It also includes typed player tags and tag definitions.
 The current `#/scouting` page is organized as a professional scouting workflow:
 
 - Matchup Lab: season, PP team, PK team, selected exploit, tactical board, and
-  generated Scouting Brief.
+  generated Scouting Brief. The first-pass UI includes a compact current-read
+  strip and actionable matchup example cards that load a matchup into the
+  selectors.
 - Player Passports: selected-season player tags with sample trust and
   expandable evidence.
 - Player + Goalie Discovery: broader leaderboards and similar-player tools that
@@ -129,7 +131,14 @@ python -m unittest discover -s tests
 python -m compileall models_v2 moneypuck run_models_v2.py
 cd ..\Frontend
 npm run build
+npm run lint
+npm run qa:scouting
 ```
+
+`npm run qa:scouting` expects the local Vite server at
+`http://127.0.0.1:5173/#/scouting`. It checks the scouting controls, selected
+zone updates, season switching, mobile overflow, tactical-board presence, and
+browser console health.
 
 Before trusting a fresh run, also run:
 

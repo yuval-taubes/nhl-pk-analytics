@@ -882,6 +882,20 @@ function attackTypeLabel(value: string) {
   return labels[value] ?? slugLabel(value)
 }
 
+function zoneIdForAttackType(value: string) {
+  const zones: Record<string, string> = {
+    net_front_rebound: 'netfront',
+    east_west_seam: 'backdoor',
+    downhill: 'low_slot',
+    diagonal_seam: 'backdoor',
+    bumper_slot: 'bumper',
+    point_reset: 'point',
+    reset: 'point',
+  }
+
+  return zones[value] ?? 'low_slot'
+}
+
 function RinkTraceHero({ faceoffValue, forayCount }: { faceoffValue: string; forayCount: string }) {
   return (
     <div className="rink-hero" aria-label="Animated rink trace model graphic">
@@ -1341,24 +1355,11 @@ function V2ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
         title="Special Teams Scouting Lab"
         body="Compare PP attack tendencies, PK leak profiles, player passports, and goalie rebound/control signals in one game-prep workflow."
       />
-      <div className="season-picker">
-        <label htmlFor="scouting-season">Season</label>
-        <select
-          id="scouting-season"
-          value={activeSeason ?? ''}
-          onChange={(event) => setSelectedSeason(Number(event.target.value))}
-        >
-          {seasons.map((season) => (
-            <option key={season} value={season}>
-              {formatSeasonLabel(season)}
-            </option>
-          ))}
-        </select>
-      </div>
       <nav className="scouting-workflow-nav" aria-label="Scouting workflow sections">
-        <a href="#matchup-lab">Matchup</a>
-        <a href="#player-passports">Players</a>
-        <a href="#discovery">Discovery</a>
+        <a href="#matchup-lab">1 Matchup</a>
+        <a href="#scouting-brief">2 Brief</a>
+        <a href="#player-passports">3 Players</a>
+        <a href="#discovery">More Discovery</a>
       </nav>
 
       <section className="workflow-section primary" id="matchup-lab">
@@ -1373,21 +1374,23 @@ function V2ScoutingPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
           shotMaps={dashboard.teamShotMaps ?? []}
           playerPassports={playerPassports}
           activeSeason={activeSeason}
+          seasons={seasons}
+          onSeasonChange={setSelectedSeason}
         />
       </section>
 
       <section className="workflow-section" id="player-passports">
         <div className="workflow-heading">
-          <span>Step 2</span>
+          <span>Step 3</span>
           <h2>Check player passports</h2>
-          <p>Use the season’s player tags to understand which PK profiles are stable, which are directional, and where sample trust matters.</p>
+          <p>Use the season's player tags to understand which PK profiles are stable, which are directional, and where sample trust matters.</p>
         </div>
         <PlayerPassportPanel profiles={playerPassports.slice(0, 6)} />
       </section>
 
       <section className="workflow-section discovery" id="discovery">
         <div className="workflow-heading">
-          <span>Step 3</span>
+          <span>Secondary</span>
           <h2>Player + goalie discovery</h2>
           <p>Broader leaderboards for finding PK talent, noisy upside, similar players, two-way profiles, and goalie rebound/control signals.</p>
         </div>
@@ -1466,12 +1469,16 @@ function ScoutingLab({
   shotMaps,
   playerPassports,
   activeSeason,
+  seasons,
+  onSeasonChange,
 }: {
   matchups: MatchupCard[]
   attackTypes: AttackProfileRow[]
   shotMaps: TeamShotMapBin[]
   playerPassports: PlayerTagProfile[]
   activeSeason?: number
+  seasons: number[]
+  onSeasonChange: (season: number) => void
 }) {
   const [mapMode, setMapMode] = useState<TacticalMapMode>('mismatch')
   const [selectedZoneId, setSelectedZoneId] = useState<string | undefined>()
@@ -1507,6 +1514,12 @@ function ScoutingLab({
     () => selectMatchupPassports(playerPassports, activePkTeam, mapState.primaryPocket?.id),
     [activePkTeam, mapState.primaryPocket?.id, playerPassports],
   )
+  const loadMatchupCard = (matchup: MatchupCard) => {
+    setSelectedPpTeam(matchup.pp_team)
+    setSelectedPkTeam(matchup.pk_team)
+    setSelectedZoneId(zoneIdForAttackType(matchup.attack_type))
+    setMapMode('mismatch')
+  }
 
   return (
     <section className="scouting-lab" aria-label="Special teams matchup lab">
@@ -1525,8 +1538,11 @@ function ScoutingLab({
         mode={mapMode}
         ppTeams={ppTeamOptions}
         pkTeams={pkTeamOptions}
+        seasons={seasons}
+        activeSeason={activeSeason}
         selectedPpTeam={activePpTeam}
         selectedPkTeam={activePkTeam}
+        onSeasonChange={onSeasonChange}
         onModeChange={setMapMode}
         onPpTeamChange={setSelectedPpTeam}
         onPkTeamChange={setSelectedPkTeam}
@@ -1540,7 +1556,9 @@ function ScoutingLab({
         {matchups.length === 0 && (
           <div className="empty-panel-note">Mismatch cards are generated for the latest season only; the heat map remains a league danger view.</div>
         )}
-        {matchups.slice(0, 3).map((matchup) => (
+        {matchups.slice(0, 3).map((matchup) => {
+          const canLoad = ppTeamOptions.includes(matchup.pp_team) && pkTeamOptions.includes(matchup.pk_team)
+          return (
           <article className="matchup-card" key={`${matchup.season}-${matchup.pp_team}-${matchup.pk_team}-${matchup.attack_type}`}>
             <div>
               <span>{attackTypeLabel(matchup.attack_type)}</span>
@@ -1557,8 +1575,11 @@ function ScoutingLab({
                 <dd>{formatDecimal(matchup.pk_leak_index, 2)}x</dd>
               </div>
             </dl>
+            <button type="button" onClick={() => loadMatchupCard(matchup)} disabled={!canLoad}>
+              {canLoad ? 'Load read' : 'Outside selectors'}
+            </button>
           </article>
-        ))}
+        )})}
         {attackTypes.length > 0 && (
           <div className="attack-type-strip">
             {attackTypes.map((row) => (
@@ -1620,7 +1641,7 @@ function ScoutingBriefPanel({
   }
 
   return (
-    <article className="scouting-brief" aria-label="Generated scouting brief">
+    <article className="scouting-brief" id="scouting-brief" aria-label="Generated scouting brief">
       <div className="brief-topline">
         <div>
           <span>Scouting brief</span>
@@ -1713,8 +1734,11 @@ function TeamLookMap({
   mode,
   ppTeams,
   pkTeams,
+  seasons,
+  activeSeason,
   selectedPpTeam,
   selectedPkTeam,
+  onSeasonChange,
   onModeChange,
   onPpTeamChange,
   onPkTeamChange,
@@ -1724,18 +1748,38 @@ function TeamLookMap({
   mode: TacticalMapMode
   ppTeams: string[]
   pkTeams: string[]
+  seasons: number[]
+  activeSeason?: number
   selectedPpTeam: string
   selectedPkTeam: string
+  onSeasonChange: (season: number) => void
   onModeChange: (mode: TacticalMapMode) => void
   onPpTeamChange: (team: string) => void
   onPkTeamChange: (team: string) => void
   onZoneSelect: (zoneId: string) => void
 }) {
   const hasData = ppTeams.length > 0 && pkTeams.length > 0 && state.primaryPocket
+  const recommendedAttack = recommendedAttackForZone(state.primaryPocket?.id, state.ppTeam)
+  const seasonLabel = activeSeason ? formatSeasonLabel(activeSeason) : 'Season pending'
+  const modeLabel = mode === 'mismatch' ? 'Exploit view' : mode === 'pp_attack' ? 'PP creation' : 'PK allowed danger'
 
   return (
     <div className="danger-heatmap" aria-label="Power play and penalty kill matchup map">
       <div className="heatmap-toolbar">
+        <div>
+          <label htmlFor="scouting-season">Season</label>
+          <select
+            id="scouting-season"
+            value={activeSeason ?? ''}
+            onChange={(event) => onSeasonChange(Number(event.target.value))}
+          >
+            {seasons.map((season) => (
+              <option key={season} value={season}>
+                {formatSeasonLabel(season)}
+              </option>
+            ))}
+          </select>
+        </div>
         <div>
           <label htmlFor="pp-team-select">PP team</label>
           <select id="pp-team-select" value={selectedPpTeam} onChange={(event) => onPpTeamChange(event.target.value)} disabled={ppTeams.length === 0}>
@@ -1772,6 +1816,28 @@ function TeamLookMap({
           </div>
         </div>
       )}
+      <div className="matchup-read-strip" aria-label="Current matchup read">
+        <div>
+          <span>Current read</span>
+          <strong>{state.ppTeam || 'PP'} PP vs {state.pkTeam || 'PK'} PK</strong>
+          <em>{seasonLabel} / {modeLabel}</em>
+        </div>
+        <div>
+          <span>Primary edge</span>
+          <strong>{state.primaryPocket?.label ?? 'No zone selected'}</strong>
+          <em>{state.edgeLabel} / {cleanEdgeSource(state.edgeSource)}</em>
+        </div>
+        <div>
+          <span>Shape check</span>
+          <strong>{state.primaryPocket ? `${sentenceCase(state.primaryPocket.ppTendencyLabel)} PP / ${sentenceCase(state.primaryPocket.pkLeakLabel)} PK` : 'Pending'}</strong>
+          <em>{state.primaryPocket ? `${formatDecimal(state.primaryPocket.mismatchScore, 2)} exploit index` : 'Select teams with map data'}</em>
+        </div>
+        <div>
+          <span>Next action</span>
+          <strong>{recommendedAttack.heading}</strong>
+          <em>{recommendedAttack.body}</em>
+        </div>
+      </div>
       {hasData && (
         <>
           <AnimatedPatternBoard state={state} mode={mode} />
@@ -1862,20 +1928,30 @@ function AnimatedPatternBoard({ state, mode }: { state: TacticalMapState; mode: 
             <text y="5">{skater.label}</text>
           </g>
         ))}
-        <circle className="pattern-puck-ring" cx={state.route.puck.x} cy={state.route.puck.y} r="18" />
-        <circle className="pattern-puck" cx={state.route.puck.x} cy={state.route.puck.y} r="8" filter="url(#patternGlow)" />
-        <text className="pattern-puck-label" x={state.route.puck.x} y={state.route.puck.y - 25}>PUCK</text>
+        <circle className="pattern-touch-point-ring" cx={state.route.touchPoint.x} cy={state.route.touchPoint.y} r="18" />
+        <circle className="pattern-touch-point" cx={state.route.touchPoint.x} cy={state.route.touchPoint.y} r="8" filter="url(#patternGlow)" />
+        <text className="pattern-touch-point-label" x={state.route.touchPoint.x} y={state.route.touchPoint.y - 25}>TOUCH POINT</text>
       </svg>
       <div className="pattern-caption">
-        <strong>{state.route.title}</strong>
-        <span>{state.route.detail}</span>
-        <div className="pattern-legend" aria-label="Tactical route and role legend">
-          <span><i className="legend-line carry" /> Carry</span>
-          <span><i className="legend-line pass" /> Pass</span>
-          <span><i className="legend-line shot" /> Shot</span>
-          <span><i className="legend-puck" /> Puck/touch</span>
-          <span><b>PP</b> P LF RF B NF</span>
-          <span><b>PK</b> F1 F2 D1 D2</span>
+        <div className="pattern-play-header">
+          <strong>{state.route.title}</strong>
+          <span>Suggested touch sequence</span>
+        </div>
+        <p className="pattern-play-copy">{state.route.detail}</p>
+        <div className="pattern-key-row" aria-label="Tactical route and role legend">
+          <span className="pattern-key-title">Play key</span>
+          <div className="pattern-key-groups">
+            <div className="pattern-legend">
+              <span><i className="legend-line carry" /> Carry lane</span>
+              <span><i className="legend-line pass" /> Pass lane</span>
+              <span><i className="legend-line shot" /> Shot lane</span>
+              <span><i className="legend-touch" /> Touch point</span>
+            </div>
+            <div className="pattern-roles">
+              <span><b>PP</b> P LF RF B NF</span>
+              <span><b>PK</b> F1 F2 D1 D2</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1922,7 +1998,7 @@ type TacticalRoute = {
   detail: string
   lanes: { from: { x: number; y: number }; to: { x: number; y: number }; kind?: 'carry' | 'pass' }[]
   shotLane?: { from: { x: number; y: number }; to: { x: number; y: number } }
-  puck: { x: number; y: number }
+  touchPoint: { x: number; y: number }
   touchPoints: { x: number; y: number }[]
   involvedPpRoles: TacticalSkater['role'][]
   stressedPkRoles: TacticalSkater['role'][]
@@ -2008,11 +2084,11 @@ function buildScoutingBrief(
   })
   const playerNoteHeading = `${state.pkTeam || 'PK'} PK player passport notes`
   const playerNoteEmpty = state.pkTeam
-    ? `No ${state.pkTeam} PK player passports are available for this season.`
+    ? `No ${state.pkTeam} PK player passports matched this selected season and team context.`
     : 'No PK player passports are available for this selected matchup.'
   const caveats = [
     'Based on shot and last-event geometry, not full player tracking.',
-    'The tactical route is a simplified play suggestion, not a tracked sequence.',
+    'The tactical route is a simplified touch sequence, not a tracked puck path.',
     'Low-sample player tags are directional.',
     'Matchup scores are season-relative.',
   ]
@@ -2093,7 +2169,7 @@ function recommendedAttackForZone(zoneId: string | undefined, ppTeam: string) {
   if (zoneId === 'backdoor') {
     return {
       heading: 'Hit the east-west seam',
-      body: `${team} should pull the PK toward the puck side, then make the lateral seam pass before the shot lane closes.`,
+      body: `${team} should pull the PK toward the strong side, then make the lateral seam pass before the shot lane closes.`,
     }
   }
   return {
@@ -2394,7 +2470,7 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
       detail: 'No exported shot pockets are available for this matchup state.',
       lanes: lanesFromPoints(fallbackPoints),
       shotLane: { from: fallbackPoints[2], to: { x: 824, y: 230 } },
-      puck: fallbackPoints[1],
+      touchPoint: fallbackPoints[1],
       touchPoints: fallbackPoints,
       involvedPpRoles: ['left_flank', 'bumper', 'net_front'],
       stressedPkRoles: ['d1', 'd2'],
@@ -2423,7 +2499,7 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
       : [[strongSide, bumper, lowSlot], [strongSide, lowWall, bumper, lowSlot], [strongSide, lowMiddle, lowSlot], [strongSide, highMiddle, lowSlot]]
     involvedPpRoles = [strongSide === leftFlank ? 'left_flank' : 'right_flank', 'bumper', 'net_front']
     stressedPkRoles = ['f1', 'd1', 'd2']
-    detail = `${ppTeam} should move the puck from the half-wall into the bumper or low slot before the PK can collapse.`
+    detail = `${ppTeam} should work from the half-wall into the bumper or low slot before the PK can collapse.`
   } else if (primary.id === 'bumper') {
     routeCandidates = strongSide === leftFlank
       ? [[point, strongSide, bumper], [point, highWall, bumper], [point, lowWall, bumper]]
@@ -2446,7 +2522,7 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
       : [[strongSide, bumper, backdoor], [strongSide, lowWall, lowBoardSeam, backdoor], [strongSide, lowMiddle, backdoor], [strongSide, highMiddle, backdoor]]
     involvedPpRoles = [strongSide === leftFlank ? 'left_flank' : 'right_flank', 'bumper', 'net_front']
     stressedPkRoles = primary.y < 230 ? ['f2', 'd2'] : ['f1', 'd1']
-    detail = `${ppTeam} can pull the PK toward the puck side, then hit the weak-side seam before the low defender recovers.`
+    detail = `${ppTeam} can pull the PK toward the strong side, then hit the weak-side seam before the low defender recovers.`
   } else {
     routeCandidates = [
       [strongSide, point, finish],
@@ -2466,7 +2542,7 @@ function buildTacticalRoute(primary: TacticalPocket | undefined, mode: TacticalM
       : detail,
     lanes: lanesFromPoints(routePoints),
     shotLane: { from: routePoints[routePoints.length - 1], to: net },
-    puck: routePoints[Math.min(1, routePoints.length - 1)],
+    touchPoint: routePoints[Math.min(1, routePoints.length - 1)],
     touchPoints: routePoints,
     involvedPpRoles,
     stressedPkRoles,
@@ -2597,7 +2673,7 @@ function PlayerPassportPanel({ profiles }: { profiles: PlayerTagProfile[] }) {
       <div className="panel-heading-row">
         <div>
           <h2>Player passports</h2>
-          <p>Dynamic tags generated from the player profile, with the reason and sample note kept beside the label.</p>
+          <p>Selected-season PK tags, with trust labels, plain-English reads, and evidence notes kept behind details.</p>
         </div>
         <span>{profiles.length} shown</span>
       </div>

@@ -1,6 +1,6 @@
 # Analytics Model Guide
 
-Last updated: 2026-07-04
+Last updated: 2026-07-15
 
 This folder is the modeling layer for the penalty-kill project. It turns NHL
 play-by-play and MoneyPuck CSV data into validation reports, model outputs, and
@@ -70,6 +70,113 @@ The current database should not be used for:
 
 That is why several models have been reframed from "on-ice tactical impact" to "supported event and possession profiles."
 
+
+## Shift And MoneyPuck Validation
+
+The first shift/on-ice trust checks live in `diagnostics/validate_shift_and_moneypuck_alignment.py`.
+
+Run from the repository root after reprocessing a validation batch:
+
+```powershell
+$env:NHL_DB_PASSWORD = "<local password>"
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability.py --game-limit 50
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\validate_shift_and_moneypuck_alignment.py --game-limit 50
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\shift_pk_exposure.py --game-limit 50
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\shift_pk_fatigue_pressure.py
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\shift_pk_adjusted_pressure.py
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\audit_shift_possession_coverage.py
+```
+
+The scripts write:
+
+- `Analytics/reports/latest_shift_availability.md`
+- `Analytics/reports/latest_shift_availability.csv`
+- `Analytics/reports/latest_shift_on_ice_validation.md`
+- `Analytics/reports/latest_moneypuck_shot_alignment.md`
+- `Analytics/reports/latest_shift_pk_exposure.md`
+- `Analytics/reports/latest_shift_pk_player_exposure.csv`
+- `Analytics/reports/latest_shift_pk_shift_age_buckets.csv`
+- `Analytics/reports/latest_shift_pk_fatigue_pressure.md`
+- `Analytics/reports/latest_shift_pk_fatigue_by_shift_age.csv`
+- `Analytics/reports/latest_shift_pk_fatigue_by_rest.csv`
+- `Analytics/reports/latest_shift_pk_adjusted_pressure.md`
+- `Analytics/reports/latest_shift_pk_adjusted_pressure.json`
+- `Analytics/reports/latest_shift_pk_adjusted_pressure_estimates.csv`
+- `Analytics/reports/latest_shift_pk_adjusted_pressure_sensitivity.csv`
+- `Analytics/reports/latest_shift_pk_pp_control_sensitivity.csv`
+- `Analytics/reports/latest_shift_possession_coverage.md`
+- `Analytics/reports/latest_shift_possession_coverage_by_game.csv`
+
+Current full-census result: top-level shift/on-ice validation is `REVIEW` only because 57 of 3,936 games have no NHL shiftchart source rows. The `3,879` source-covered games pass: `1,224,084/1,224,084` events have manpower rows, with a `1.05%` mismatch rate on model-safe event types. The `4.85%` all-event mismatch rate is concentrated in penalty timing, period/game-end rows, stoppages, goal timestamps, and goalie-pulled bookkeeping, so those cases remain review material rather than the primary modeling gate.
+
+The full scanner confirms one bounded source gap: games `2024021235-2024021291` return zero rows while all other ingested games are source-covered. Treat shift/on-ice models as source-covered only, and keep source coverage counts next to any TOI, on-ice, or fatigue output.
+
+Use `--persist` to write verified scanner results to `game_shift_source_status`. The scanner also writes `latest_shift_availability.json`, which the API exposes as `shiftCoverage` and the frontend shows on the Data Honesty page. A request error remains distinct from a successful zero-row response.
+
+```powershell
+$env:NHL_DB_PASSWORD='YOUR_PASSWORD'
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability.py --game-limit 50 --persist
+```
+
+For a resumable full census, scan only unchecked games and commit in small batches. A rerun continues from the remaining `not_checked` rows. Use a dedicated report stem so the UI's latest-sample artifact is not replaced.
+
+```powershell
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability.py --not-checked --persist --persist-batch-size 25 --report-stem shift_availability_full_census
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability.py --retry-errors --persist --persist-batch-size 25 --report-stem shift_availability_error_retry
+```
+
+The completed 2026-07-13 census covers all `3,936` ingested games: `3,879` (`98.55%`) returned shift rows and `57` (`1.45%`) returned successful zero-row responses. There are no unchecked games or request errors. The 57 unavailable games are exactly the previously mapped `2024021235-2024021291` block. Source availability is not the same as feature readiness: only backfilled and validated games enter shift-derived modeling.
+
+MoneyPuck alignment passed on `340,834/342,924` unblocked NHL shot rows (`99.39%`). NHL full game IDs map to MoneyPuck compact IDs with `season = left 4 digits of NHL season` and `game_id = nhl_game_id % 1000000`; shot matching uses game-elapsed time, not period-elapsed time. Coordinate magnitudes align tightly (`0.34 ft` average X magnitude delta, `0.54 ft` average Y magnitude delta), while signed rink direction still needs explicit convention handling before location models make side-specific claims.
+
+The source-covered PK exposure diagnostic remains descriptive. `latest_shift_pk_exposure.md` summarizes all `3,879` shift-covered games; the shift-age bucket table excludes goals because NHL shiftchart segments often start or stop at scoring timestamps, which can reset goal-event shift age to zero. Goal exposures remain in the player table as outcomes, not as fatigue evidence.
+
+`pk_shift_player_event_features` is the shared database feature view. It requires `source_status = 'available'` and carries player, team, event, shift duration, shift age, rest before shift, PK state, and the source check timestamp. `rest_before_shift_seconds` is a game-clock gap between recorded shifts; it excludes the real intermission duration and must not be described as wall-clock recovery. Use this view for new NHL-shift-derived models instead of rebuilding interval joins independently.
+
+### Season coverage and focused gaps
+
+Run a stratified source scan across each ingested season:
+
+```powershell
+$env:NHL_DB_PASSWORD='YOUR_PASSWORD'
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability_by_season.py --games-per-season 20 --persist
+```
+
+The 2026-07-12 sample found `20/20` games available in 2022-23, `20/20` in 2023-24, and `19/20` in 2024-25. This means the source is broadly useful and the latest-50 result should not be generalized to every season. A focused scan mapped one exact 2024-25 source hole: games `2024021235` through `2024021291` returned zero rows, while `2024021230-1234` and `2024021292-1312` returned normal shift counts. See `latest_shift_availability_by_season.md` and `shift_availability_2024021230_2024021312.csv`.
+
+Focused range scans use database-backed game IDs:
+
+```powershell
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\scan_shift_availability.py --game-id-min 2024021230 --game-id-max 2024021312 --persist --report-stem shift_availability_2024021230_2024021312
+```
+
+### Source-covered fatigue pressure
+
+```powershell
+$env:NHL_DB_PASSWORD='YOUR_PASSWORD'
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\shift_pk_fatigue_pressure.py
+```
+
+After the full source-certified backfill, all `3,879` available games contain shifts. The PK feature view contains roughly `800,000` player-event rows across `1,138` players. The descriptive team-event result shows non-goal shot-attempt pressure rising with the oldest active PK shift: `26.64` attempts per 100 recorded events at 0-29 seconds, `49.38` at 30-44, `56.73` at 45-59, and `61.99` at 60+. Shortest-rest results remain weaker and non-monotonic at `39.20`, `42.58`, `44.28`, and `43.33` attempts per 100 events.
+
+This is an exploratory pressure association, not a fatigue effect estimate. It is not possession-, opponent-, score-, zone-, or event-mix-adjusted. Goals are excluded because scoring timestamps can reset shift age. MoneyPuck xG is joined with the validated game/period/team/time contract, but bucket-level match coverage is only `78-95%`, below the 95% trust gate in every bucket. The xG direction is therefore audit evidence only: `1.33`, `2.38`, `2.84`, and `3.59` xG per 100 events across increasing shift-age buckets.
+
+### Adjusted next-shot pressure
+
+```powershell
+$env:NHL_DB_PASSWORD='YOUR_PASSWORD'
+.\Analytics\venv\Scripts\python.exe .\Analytics\diagnostics\shift_pk_adjusted_pressure.py
+```
+
+The adjusted diagnostic asks whether the opponent records the next shot attempt within ten seconds of each source-covered PK event. It controls shortest rest, penalty elapsed time, period, running score differential, current zone and event type, PK team, and opponent, with standard errors clustered by game.
+
+Across `186,951` event states from `3,878` games, adjusted next-shot risk is `15.88%`, `17.26%`, `18.80%`, and `20.18%` across increasing shift-age buckets. Relative to 0-29 seconds, odds ratios are `1.11`, `1.25`, and `1.37`; all clustered intervals exclude 1. The model converged with 3,878 game clusters, 85 parameters, and 2,199 rows per parameter.
+
+Horizon sensitivity preserves direction and all older-shift intervals exclude the reference at 5, 10, and 15 seconds in the full sample. Treat this as a promising adjusted sustained-pressure association, not proof that fatigue itself causes the next shot. Tracking, deployment intent, exact possession state, and substitutions between recorded events remain unobserved.
+
+The existing reconstructed `possessions` table is not suitable as a complete conditioning layer for this model. It covers only `26,250/186,952` source-covered PK team-events (`14.04%`) because it intentionally stores selected offensive-zone sequences that start with detected entries, OZ faceoffs, or turnovers and survive a meaningful-activity filter. There are no ambiguous overlaps, but conditioning on that table would select a narrow subset.
+
+As a conservative sensitivity, the adjusted model also restricts to events explicitly owned by the PP team in its offensive zone. This high-confidence control proxy contains `50,666` rows across `3,822` games. Adjusted 10-second next-shot risk rises from `24.65%` at 0-29 seconds to `26.37%`, `27.48%`, and `29.58%`; odds ratios for all older buckets exclude 1 with game-clustered intervals. This strengthens the sustained-pressure association but still does not provide literal puck possession or tracking context.
 ## How To Run
 
 From `Analytics/`:

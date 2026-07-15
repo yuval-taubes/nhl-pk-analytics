@@ -107,6 +107,8 @@ The UI should feel like a hockey operations research piece:
 - Editorial landing-page rhythm
 - Animated rink-line motifs inspired by SVG path drawing
 - Clear model explanations over dense dashboard tables
+- Latest NHL shiftchart coverage and eligibility on the Data Honesty page when the live v2 API supplies `shiftCoverage`
+- Adjusted shift-age next-shot research on Data Honesty when the API supplies `shiftPressureResearch`, with the non-causal caveat shown beside it
 - No generic SaaS hero pages
 
 ## Next Frontend Milestones

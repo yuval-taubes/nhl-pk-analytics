@@ -80,6 +80,39 @@ export type SourceInfo = {
   credit: string
 }
 
+export type ShiftCoverage = {
+  generatedAt: string
+  requestedGames: number
+  availableGames: number
+  missingGames: number
+  errorGames: number
+  coverageRate: number
+  modelEligibility: string
+}
+
+export type ShiftPressureEstimate = {
+  bucket: string
+  adjustedProbability: number
+  adjustedPer100Events: number
+}
+
+export type ShiftPressureResearch = {
+  generatedAt: string
+  status: 'promising_adjusted_association'
+  rows: number
+  games: number
+  outcomes: number
+  horizonSeconds: number
+  estimates: ShiftPressureEstimate[]
+  controlProxy?: {
+    definition: string
+    rows: number
+    games: number
+    estimates: ShiftPressureEstimate[]
+  }
+  caveat: string
+}
+
 export type MovementRow = {
   movement_bucket: string
   shots: number
@@ -264,6 +297,8 @@ export type AnalyticsDashboard = {
   latestRun: LatestRun
   version?: string
   source?: SourceInfo
+  shiftCoverage?: ShiftCoverage
+  shiftPressureResearch?: ShiftPressureResearch
   metrics: Metric[]
   takeaways: Takeaway[]
   forayRows: ForayRow[]

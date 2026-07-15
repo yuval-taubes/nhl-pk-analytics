@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
+  Activity,
   Database,
+  Gauge,
   ListFilter,
   Medal,
   Route,
@@ -2992,6 +2994,31 @@ function DataHonestyPage({ dashboard }: { dashboard: AnalyticsDashboard }) {
         body="The current database can support possession outcomes, faceoff windows, entries, clears, and tagged event profiles. It cannot support tracking-style positioning claims yet."
       />
       <div className="honesty-columns">
+        {dashboard.shiftCoverage && (
+          <article>
+            <Gauge size={28} />
+            <h2>Shift source coverage</h2>
+            <ul>
+              <li>{dashboard.shiftCoverage.availableGames} of {dashboard.shiftCoverage.requestedGames} checked games have shift rows</li>
+              <li>{dashboard.shiftCoverage.missingGames} returned a valid response with zero rows</li>
+              <li>{dashboard.shiftCoverage.errorGames} request errors in the latest scan</li>
+              <li>TOI, on-ice, and fatigue outputs use {dashboard.shiftCoverage.modelEligibility}</li>
+            </ul>
+          </article>
+        )}
+        {dashboard.shiftPressureResearch && (
+          <article>
+            <Activity size={28} />
+            <h2>Shift-age pressure research</h2>
+            <ul>
+              {dashboard.shiftPressureResearch.estimates.map((estimate) => (
+                <li key={estimate.bucket}>{estimate.bucket}s: {estimate.adjustedPer100Events.toFixed(2)} next shots per 100 event states</li>
+              ))}
+              <li>{dashboard.shiftPressureResearch.games} games, {dashboard.shiftPressureResearch.rows.toLocaleString()} event states</li>
+              <li>{dashboard.shiftPressureResearch.caveat}</li>
+            </ul>
+          </article>
+        )}
         <article>
           <Database size={28} />
           <h2>Supported now</h2>

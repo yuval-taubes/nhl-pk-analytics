@@ -1,0 +1,9 @@
+{
+  "generatedAt": "2026-07-12T00:13:43",
+  "requestedGames": 50,
+  "availableGames": 21,
+  "missingGames": 29,
+  "errorGames": 0,
+  "coverageRate": 0.42,
+  "modelEligibility": "source-covered games only"
+}

@@ -6,18 +6,20 @@ hockey answers.
 
 **Live frontend:** https://yuval-taubes.github.io/nhl-pk-analytics/
 
-The current 2.0 version is built around MoneyPuck shot quality. It focuses on
-why penalty kills break down: puck movement before the shot, rebounds, failed
-recoveries after blocks, goalie control, fatigue, and season-by-season player
-profiles. The preview site now centers that work in a Special Teams Scouting
-Lab: PP attack tendencies, PK leak profiles, a tactical matchup board, generated
-scouting briefs, and player passports with sample/trust caveats.
+The current 2.0 version combines NHL play-by-play, NHL shiftcharts, and
+MoneyPuck shot quality. It focuses on why penalty kills break down: puck
+movement before the shot, rebounds, failed recoveries after blocks, goalie
+control, sustained pressure as shifts age, and season-by-season player profiles.
+The preview site centers that work in a Special Teams Scouting Lab: PP attack
+tendencies, PK leak profiles, a tactical matchup board, generated scouting
+briefs, and player passports with explicit sample and trust caveats.
 
 ## What This Demonstrates
 
 - Ingesting public NHL play-by-play with a .NET pipeline.
+- Reconstructing player shifts, event-level on-ice personnel, goalie state, and manpower from NHL shiftcharts.
 - Designing a PostgreSQL schema for games, events, shots, possessions, and players.
-- Validating coordinate, manpower, possession, and join assumptions.
+- Validating coordinate, manpower, source coverage, possession, and join assumptions against independent evidence.
 - Producing descriptive penalty-kill model outputs in Python.
 - Importing MoneyPuck CSV data for richer v2 shot-quality and scouting models.
 - Serving model outputs through an ASP.NET API.
@@ -42,6 +44,35 @@ For a reviewer-friendly path through the project, see `docs/demo.md`,
 The goal is not to claim every hockey question is solved. It is to make the
 pipeline, strongest findings, and trust boundaries easy to inspect.
 
+## Validated Data Foundation
+
+The current PostgreSQL build contains `3,936` NHL games from 2022-23 through
+2024-25. Every game has play-by-play. The NHL shiftcharts endpoint provides
+usable shift rows for `3,879` games (`98.55%`), and all `3,879` have been
+backfilled into raw shifts, event-level on-ice players, and derived manpower.
+The remaining 57 games form one verified contiguous source gap,
+`2024021235-2024021291`; they remain available for play-by-play and MoneyPuck
+analysis but are excluded from shift-derived claims.
+
+Current trust checks:
+
+- `1,224,084/1,224,084` events in source-covered games have derived manpower rows.
+- Model-safe shift-derived manpower disagrees with NHL play-by-play skater counts on `1.05%` of events.
+- `340,834/342,924` eligible NHL shots match MoneyPuck by game, period, team, and time (`99.39%`).
+- Coordinate magnitudes agree tightly across NHL and MoneyPuck; signed rink direction remains an explicit modeling convention.
+- The PK shift feature layer contains `802,175` player-event rows across `3,878` games and `1,138` players.
+
+The full adjusted pressure diagnostic uses `186,951` PK event states across
+`3,878` games. Estimated probability of the opponent recording the next shot
+attempt within ten seconds rises from `15.88%` for a 0-29 second oldest active
+PK shift to `17.26%`, `18.80%`, and `20.18%` in the 30-44, 45-59, and 60+
+second buckets. This is a stable adjusted association, not a causal fatigue
+claim: positioning, deployment intent, substitutions between events, and exact
+possession remain unobserved.
+
+See `docs/validation_status.md` for the trust ledger and
+`Analytics/reports/latest_shift_on_ice_validation.md` for the all-game report.
+
 ## Repository Layout
 
 ```text
@@ -61,6 +92,8 @@ Implemented:
 
 - PostgreSQL schema for games, teams, players, events, shots, possessions, and event-player links.
 - NHL schedule and play-by-play ingestion.
+- NHL shiftchart ingestion with source-state auditing and resumable certified-source backfill.
+- Event-level on-ice reconstruction, goalie state, and manpower comparison against play-by-play.
 - Coordinate normalization to a 200 x 85 rink.
 - Strength-state parsing for 5v5, 4v5, 3v5, and related states.
 - Penalty-kill possession tracking.
@@ -86,9 +119,9 @@ Implemented:
 
 Still in progress:
 
-- Improving possession validation after the latest strength-change boundary fix.
+- Replacing the selected offensive-zone possession table with a more complete puck-control representation; current PK-state coverage is only `14.04%`.
 - Deduping player-level analytics joins before model training.
-- Hardening coordinate orientation diagnostics.
+- Documenting signed coordinate orientation before side-specific rink claims.
 - Expanding tactical sequence mining and PK breakdown modeling.
 
 ## Architecture
@@ -96,7 +129,7 @@ Still in progress:
 Data flow:
 
 ```text
-NHL API
+NHL play-by-play + shiftcharts
   -> NhlPkIngest
   -> PostgreSQL schema
   -> Analytics diagnostics

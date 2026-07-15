@@ -269,6 +269,8 @@ app.MapGet("/api/analytics/v2/dashboard", (IConfiguration config, IWebHostEnviro
         },
         version = StringValue(run["version"]),
         source = run["source"],
+        shiftCoverage = TryLoadShiftCoverage(env),
+        shiftPressureResearch = TryLoadAnalyticsReport(env, "latest_shift_pk_adjusted_pressure.json"),
         metrics = new[]
         {
             new
@@ -394,6 +396,22 @@ app.Run();
 static (JsonNode? Run, string? Path, string? Error) TryLoadLatestRun(IConfiguration config, IWebHostEnvironment env)
 {
     return TryLoadLatestRunPattern(config, env, "models_2_10_run_*.json");
+}
+
+static JsonNode? TryLoadShiftCoverage(IWebHostEnvironment env)
+{
+    return TryLoadAnalyticsReport(env, "latest_shift_availability.json");
+}
+
+static JsonNode? TryLoadAnalyticsReport(IWebHostEnvironment env, string fileName)
+{
+    var candidates = new[]
+    {
+        Path.Combine(env.ContentRootPath, "Analytics", "reports", fileName),
+        Path.Combine(env.ContentRootPath, "..", "Analytics", "reports", fileName),
+    };
+    var path = candidates.Select(Path.GetFullPath).FirstOrDefault(File.Exists);
+    return path is null ? null : JsonNode.Parse(File.ReadAllText(path));
 }
 
 static (JsonNode? Run, string? Path, string? Error) TryLoadLatestV2Run(IConfiguration config, IWebHostEnvironment env)

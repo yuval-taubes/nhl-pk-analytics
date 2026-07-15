@@ -1,0 +1,5 @@
+bucket,pk_team_events,shot_attempts_against,unblocked_shot_attempts,shot_attempts_per_100_events,shots_with_xg,xg_match_rate,xg_against,xg_per_100_events,trust,pressure_ci_low,pressure_ci_high,xg_trust
+00-14,26773,10496,7588,39.2,6640,87.51,508.179,1.898,descriptive,38.62,39.79,incomplete
+15-29,41272,17572,12864,42.58,11062,85.99,831.32,2.014,descriptive,42.1,43.05,incomplete
+30-44,47995,21253,15571,44.28,13130,84.32,979.23,2.04,descriptive,43.84,44.73,incomplete
+45+,70912,30725,22403,43.33,19105,85.28,1410.572,1.989,descriptive,42.96,43.69,incomplete

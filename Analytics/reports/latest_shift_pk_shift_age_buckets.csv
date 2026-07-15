@@ -1,0 +1,5 @@
+shift_age_bucket,player_shot_attempt_events_against,avg_shift_age_seconds
+00-29,128738,16.1
+30-44,64844,36.6
+45-59,43673,51.3
+60+,50364,82.6

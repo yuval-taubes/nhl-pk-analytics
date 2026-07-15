@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NhlPkIngest.Services;
@@ -29,7 +29,14 @@ class Program
             var apiClient = serviceProvider.GetRequiredService<NhlApiClient>();
             var gameIngester = serviceProvider.GetRequiredService<GameIngester>();
 
-            await dbManager.InitializeSchemaAsync();
+            if (configuration.GetValue<bool>("Ingest:SkipSchemaInitialization", false))
+            {
+                logger.LogInformation("Skipping schema initialization by configuration.");
+            }
+            else
+            {
+                await dbManager.InitializeSchemaAsync();
+            }
 
             var existingGameIds = await dbManager.GetExistingGameIdsAsync();
 
@@ -41,11 +48,33 @@ class Program
             int logEveryN = configuration.GetValue<int>("Ingest:LogEveryNGames", 10);
 
             var allGameIds = new List<(string season, int gameId)>();
+            var configuredGameIds = ParseConfiguredGameIds(configuration.GetValue<string>("Ingest:GameIds"));
+            var singleGameId = configuration.GetValue<int?>("Ingest:SingleGameId");
+            var shiftSourceAvailableOnly = configuration.GetValue<bool>("Ingest:ShiftSourceAvailableOnly", false);
 
-            foreach (var season in seasons)
+            if (shiftSourceAvailableOnly)
             {
-                var gameIds = await apiClient.GetGameIdsForSeasonAsync(season);
-                allGameIds.AddRange(gameIds.Select(id => (season, id)));
+                var shiftBackfillGameIds = await dbManager.GetShiftSourceAvailableGamesWithoutRowsAsync();
+                logger.LogInformation("Processing {Count} verified shift-source backfill games.", shiftBackfillGameIds.Count);
+                allGameIds.AddRange(shiftBackfillGameIds.Select(id => ("shift-backfill", id)));
+            }
+            else if (configuredGameIds.Count > 0)
+            {
+                logger.LogInformation("Processing {Count} configured games: {GameIds}", configuredGameIds.Count, string.Join(", ", configuredGameIds));
+                allGameIds.AddRange(configuredGameIds.Select(id => ("configured", id)));
+            }
+            else if (singleGameId is > 0)
+            {
+                logger.LogInformation("Processing single configured game: {GameId}", singleGameId.Value);
+                allGameIds.Add(("single", singleGameId.Value));
+            }
+            else
+            {
+                foreach (var season in seasons)
+                {
+                    var gameIds = await apiClient.GetGameIdsForSeasonAsync(season);
+                    allGameIds.AddRange(gameIds.Select(id => (season, id)));
+                }
             }
 
             var gamesToProcess = allGameIds
@@ -94,6 +123,18 @@ class Program
 
             logger.LogInformation("Ingestion complete. Processed: {Processed}, Succeeded: {Succeeded}, Skipped: {Skipped}, Failed: {Failed}",
                 processed, succeeded, skipped, failed);
+
+            if (singleGameId is > 0 && succeeded > 0)
+            {
+                var counts = await dbManager.GetShiftValidationCountsAsync(singleGameId.Value);
+                logger.LogInformation(
+                    "Shift validation for game {GameId}: shifts={Shifts}, onIceRows={OnIceRows}, manpowerRows={ManpowerRows}, manpowerMatches={ManpowerMatches}",
+                    singleGameId.Value,
+                    counts.GetValueOrDefault("game_shifts"),
+                    counts.GetValueOrDefault("event_on_ice_players"),
+                    counts.GetValueOrDefault("event_manpower"),
+                    counts.GetValueOrDefault("event_manpower_matches"));
+            }
         }
         catch (Exception ex)
         {
@@ -102,6 +143,18 @@ class Program
         }
     }
 
+
+    private static List<int> ParseConfiguredGameIds(string? rawGameIds)
+    {
+        if (string.IsNullOrWhiteSpace(rawGameIds)) return new List<int>();
+
+        return rawGameIds
+            .Split(new[] { ',', ';', ' ', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(id => int.TryParse(id, out var gameId) ? gameId : 0)
+            .Where(gameId => gameId > 0)
+            .Distinct()
+            .ToList();
+    }
     private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddLogging(builder =>

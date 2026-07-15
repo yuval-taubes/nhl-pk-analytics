@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-07-15T01:07:44",
+  "status": "promising_adjusted_association",
+  "rows": 186951,
+  "games": 3878,
+  "outcomes": 32979,
+  "horizonSeconds": 10,
+  "estimates": [
+    {
+      "bucket": "00-29",
+      "adjustedProbability": 0.1587768167158043,
+      "adjustedPer100Events": 15.87768167158043
+    },
+    {
+      "bucket": "30-44",
+      "adjustedProbability": 0.17254796143576895,
+      "adjustedPer100Events": 17.254796143576893
+    },
+    {
+      "bucket": "45-59",
+      "adjustedProbability": 0.18801758931602866,
+      "adjustedPer100Events": 18.801758931602865
+    },
+    {
+      "bucket": "60+",
+      "adjustedProbability": 0.20180129337844768,
+      "adjustedPer100Events": 20.180129337844768
+    }
+  ],
+  "controlProxy": {
+    "definition": "Event explicitly owned by the PP team in its offensive zone",
+    "rows": 50666,
+    "games": 3822,
+    "estimates": [
+      {
+        "bucket": "00-29",
+        "adjustedProbability": 0.2464965536755881,
+        "adjustedPer100Events": 24.649655367558807
+      },
+      {
+        "bucket": "30-44",
+        "adjustedProbability": 0.2637243748953608,
+        "adjustedPer100Events": 26.372437489536082
+      },
+      {
+        "bucket": "45-59",
+        "adjustedProbability": 0.27476222426185953,
+        "adjustedPer100Events": 27.476222426185952
+      },
+      {
+        "bucket": "60+",
+        "adjustedProbability": 0.2958447460499842,
+        "adjustedPer100Events": 29.584474604998416
+      }
+    ]
+  },
+  "caveat": "Adjusted association, not a causal fatigue estimate; tracking, deployment intent, and exact possession state remain unobserved."
+}

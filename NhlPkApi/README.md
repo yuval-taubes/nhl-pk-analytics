@@ -59,7 +59,14 @@ GET /api/analytics/v2/dashboard
 
 `/api/analytics/v2/dashboard` is the primary frontend endpoint for 2.0. It
 returns metric cards, model takeaways, movement rows, goalie/player scouting
-leaders, available seasons, caveats, and latest-run metadata.
+leaders, available seasons, caveats, latest-run metadata, and optional
+`shiftCoverage` evidence from `Analytics/reports/latest_shift_availability.json`.
+That field describes NHL shiftchart availability only; it does not change
+MoneyPuck model eligibility.
+
+The dashboard also returns optional `shiftPressureResearch` evidence from the
+adjusted source-covered next-shot model. The field is explicitly labeled as an
+association and is shown on Data Honesty rather than promoted as a causal model.
 
 `/api/analytics/dashboard` remains available for the older NHL API model pages.
 

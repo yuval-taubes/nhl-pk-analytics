@@ -97,3 +97,56 @@ public class EventPlayer
     public int TeamId { get; set; }
     public bool IsHome { get; set; }
 }
+public class GameShift
+{
+    public int SourceShiftId { get; set; }
+    public int GameId { get; set; }
+    public int PlayerId { get; set; }
+    public int TeamId { get; set; }
+    public bool IsHome { get; set; }
+    public int Period { get; set; }
+    public int ShiftNumber { get; set; }
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public string? Duration { get; set; }
+    public int StartSeconds { get; set; }
+    public int EndSeconds { get; set; }
+    public int StartGameSeconds { get; set; }
+    public int EndGameSeconds { get; set; }
+    public decimal DurationSeconds { get; set; }
+}
+
+public class ShiftSourceResult
+{
+    public required string Status { get; init; }
+    public required string EndpointUrl { get; init; }
+    public List<NhlShiftChartRow> Rows { get; init; } = new();
+    public int? HttpStatusCode { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public class EventOnIcePlayer
+{
+    public int EventId { get; set; }
+    public int PlayerId { get; set; }
+    public int TeamId { get; set; }
+    public bool IsHome { get; set; }
+    public bool IsGoalie { get; set; }
+    public bool IsSkater => !IsGoalie;
+    public int OriginalEventIdx { get; set; }
+}
+
+public class EventManpower
+{
+    public int EventId { get; set; }
+    public int OriginalEventIdx { get; set; }
+    public int HomeSkatersShift { get; set; }
+    public int AwaySkatersShift { get; set; }
+    public int? HomeGoalieId { get; set; }
+    public int? AwayGoalieId { get; set; }
+    public bool HomeGoaliePulled { get; set; }
+    public bool AwayGoaliePulled { get; set; }
+    public string? StrengthStateShift { get; set; }
+    public string? StrengthCodeShift { get; set; }
+    public bool MatchesSituationCode { get; set; }
+}

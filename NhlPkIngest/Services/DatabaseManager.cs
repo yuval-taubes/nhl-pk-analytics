@@ -50,6 +50,33 @@ public class DatabaseManager
         return gameIds;
     }
 
+    public async Task<List<int>> GetShiftSourceAvailableGamesWithoutRowsAsync()
+    {
+        var gameIds = new List<int>();
+        await using var conn = CreateConnection();
+        await using var cmd = new NpgsqlCommand(
+            @"SELECT gsss.game_id
+              FROM game_shift_source_status gsss
+              WHERE gsss.source_status = 'available'
+                AND NOT EXISTS (SELECT 1 FROM game_shifts gs WHERE gs.game_id = gsss.game_id)
+              ORDER BY gsss.game_id",
+            conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) gameIds.Add(reader.GetInt32(0));
+        _logger.LogInformation("Found {Count} verified shift-source games without ingested rows.", gameIds.Count);
+        return gameIds;
+    }
+
+    public async Task<bool> HasGameShiftsAsync(int gameId)
+    {
+        await using var conn = CreateConnection();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM game_shifts WHERE game_id = @gameId)",
+            conn);
+        cmd.Parameters.Add("gameId", NpgsqlDbType.Integer).Value = gameId;
+        return (bool)(await cmd.ExecuteScalarAsync() ?? false);
+    }
+
     public async Task DeleteGameDataAsync(NpgsqlConnection conn, NpgsqlTransaction transaction, int gameId)
     {
         var statements = new[]
@@ -58,10 +85,19 @@ public class DatabaseManager
               USING events e
               WHERE s.event_id = e.event_id
                 AND e.game_id = @gameId",
+            @"DELETE FROM event_on_ice_players eoip
+              USING events e
+              WHERE eoip.event_id = e.event_id
+                AND e.game_id = @gameId",
+            @"DELETE FROM event_manpower em
+              USING events e
+              WHERE em.event_id = e.event_id
+                AND e.game_id = @gameId",
             @"DELETE FROM event_players ep
               USING events e
               WHERE ep.event_id = e.event_id
                 AND e.game_id = @gameId",
+            "DELETE FROM game_shifts WHERE game_id = @gameId",
             "DELETE FROM possessions WHERE game_id = @gameId",
             "DELETE FROM events WHERE game_id = @gameId",
             "DELETE FROM game_players WHERE game_id = @gameId"
@@ -356,5 +392,160 @@ public class DatabaseManager
 
         await writer.CompleteAsync();
         _logger.LogDebug("Inserted {Count} event_players (deduped from {Original})", distinct.Count, eventPlayers.Count);
+    }
+    public async Task InsertGameShiftsAsync(NpgsqlConnection conn, List<GameShift> shifts)
+    {
+        if (shifts.Count == 0) return;
+
+        var distinct = shifts
+            .GroupBy(s => (s.GameId, s.SourceShiftId))
+            .Select(g => g.First())
+            .ToList();
+
+        await using var writer = await conn.BeginBinaryImportAsync(
+            @"COPY game_shifts (source_shift_id, game_id, player_id, team_id, is_home,
+                period, shift_number, start_time, end_time, duration, start_seconds,
+                end_seconds, start_game_seconds, end_game_seconds, duration_seconds)
+              FROM STDIN (FORMAT BINARY)");
+
+        foreach (var shift in distinct)
+        {
+            await writer.StartRowAsync();
+            await writer.WriteAsync(shift.SourceShiftId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.GameId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.PlayerId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.TeamId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.IsHome, NpgsqlDbType.Boolean);
+            await writer.WriteAsync(shift.Period, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.ShiftNumber, NpgsqlDbType.Integer);
+            await writer.WriteAsync((object?)shift.StartTime ?? DBNull.Value, NpgsqlDbType.Varchar);
+            await writer.WriteAsync((object?)shift.EndTime ?? DBNull.Value, NpgsqlDbType.Varchar);
+            await writer.WriteAsync((object?)shift.Duration ?? DBNull.Value, NpgsqlDbType.Varchar);
+            await writer.WriteAsync(shift.StartSeconds, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.EndSeconds, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.StartGameSeconds, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.EndGameSeconds, NpgsqlDbType.Integer);
+            await writer.WriteAsync(shift.DurationSeconds, NpgsqlDbType.Numeric);
+        }
+
+        await writer.CompleteAsync();
+        _logger.LogDebug("Inserted {Count} game_shifts (deduped from {Original})", distinct.Count, shifts.Count);
+    }
+
+    public async Task UpsertShiftSourceStatusAsync(
+        NpgsqlConnection conn,
+        NpgsqlTransaction transaction,
+        int gameId,
+        ShiftSourceResult source)
+    {
+        await using var cmd = new NpgsqlCommand(
+            @"INSERT INTO game_shift_source_status
+                (game_id, source_status, checked_at, row_count, endpoint_url, http_status_code, error_message)
+              VALUES (@gameId, @status, NOW(), @rowCount, @endpointUrl, @httpStatusCode, @errorMessage)
+              ON CONFLICT (game_id) DO UPDATE SET
+                source_status = EXCLUDED.source_status,
+                checked_at = EXCLUDED.checked_at,
+                row_count = EXCLUDED.row_count,
+                endpoint_url = EXCLUDED.endpoint_url,
+                http_status_code = EXCLUDED.http_status_code,
+                error_message = EXCLUDED.error_message",
+            conn, transaction);
+        cmd.Parameters.Add("gameId", NpgsqlDbType.Integer).Value = gameId;
+        cmd.Parameters.Add("status", NpgsqlDbType.Varchar).Value = source.Status;
+        cmd.Parameters.Add("rowCount", NpgsqlDbType.Integer).Value = source.Rows.Count;
+        cmd.Parameters.Add("endpointUrl", NpgsqlDbType.Varchar).Value = source.EndpointUrl;
+        cmd.Parameters.Add("httpStatusCode", NpgsqlDbType.Integer).Value = source.HttpStatusCode is null ? DBNull.Value : source.HttpStatusCode.Value;
+        cmd.Parameters.Add("errorMessage", NpgsqlDbType.Text).Value = source.ErrorMessage is null ? DBNull.Value : source.ErrorMessage;
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task InsertEventOnIcePlayersAsync(NpgsqlConnection conn, List<EventOnIcePlayer> players)
+    {
+        if (players.Count == 0) return;
+
+        var distinct = players
+            .GroupBy(p => (p.EventId, p.PlayerId))
+            .Select(g => g.First())
+            .ToList();
+
+        await using var writer = await conn.BeginBinaryImportAsync(
+            "COPY event_on_ice_players (event_id, player_id, team_id, is_home, is_goalie, is_skater, original_event_idx) FROM STDIN (FORMAT BINARY)");
+
+        foreach (var player in distinct)
+        {
+            await writer.StartRowAsync();
+            await writer.WriteAsync(player.EventId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(player.PlayerId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(player.TeamId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(player.IsHome, NpgsqlDbType.Boolean);
+            await writer.WriteAsync(player.IsGoalie, NpgsqlDbType.Boolean);
+            await writer.WriteAsync(player.IsSkater, NpgsqlDbType.Boolean);
+            await writer.WriteAsync(player.OriginalEventIdx, NpgsqlDbType.Integer);
+        }
+
+        await writer.CompleteAsync();
+        _logger.LogDebug("Inserted {Count} event_on_ice_players (deduped from {Original})", distinct.Count, players.Count);
+    }
+
+    public async Task InsertEventManpowerAsync(NpgsqlConnection conn, List<EventManpower> manpower)
+    {
+        if (manpower.Count == 0) return;
+
+        await using var writer = await conn.BeginBinaryImportAsync(
+            @"COPY event_manpower (event_id, original_event_idx, home_skaters_shift,
+                away_skaters_shift, home_goalie_id, away_goalie_id, home_goalie_pulled,
+                away_goalie_pulled, strength_state_shift, strength_code_shift, matches_situation_code)
+              FROM STDIN (FORMAT BINARY)");
+
+        foreach (var row in manpower)
+        {
+            await writer.StartRowAsync();
+            await writer.WriteAsync(row.EventId, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.OriginalEventIdx, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.HomeSkatersShift, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.AwaySkatersShift, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.HomeGoalieId == null ? DBNull.Value : (object)row.HomeGoalieId.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.AwayGoalieId == null ? DBNull.Value : (object)row.AwayGoalieId.Value, NpgsqlDbType.Integer);
+            await writer.WriteAsync(row.HomeGoaliePulled, NpgsqlDbType.Boolean);
+            await writer.WriteAsync(row.AwayGoaliePulled, NpgsqlDbType.Boolean);
+            await writer.WriteAsync((object?)row.StrengthStateShift ?? DBNull.Value, NpgsqlDbType.Varchar);
+            await writer.WriteAsync((object?)row.StrengthCodeShift ?? DBNull.Value, NpgsqlDbType.Varchar);
+            await writer.WriteAsync(row.MatchesSituationCode, NpgsqlDbType.Boolean);
+        }
+
+        await writer.CompleteAsync();
+        _logger.LogDebug("Inserted {Count} event_manpower rows", manpower.Count);
+    }
+    public async Task<Dictionary<string, int>> GetShiftValidationCountsAsync(int gameId)
+    {
+        var counts = new Dictionary<string, int>();
+        await using var conn = CreateConnection();
+        await using var cmd = new NpgsqlCommand(
+            @"SELECT 'game_shifts' AS name, COUNT(*)::int AS count FROM game_shifts WHERE game_id = @gameId
+              UNION ALL
+              SELECT 'event_on_ice_players', COUNT(*)::int
+              FROM event_on_ice_players eoip
+              JOIN events e ON e.event_id = eoip.event_id
+              WHERE e.game_id = @gameId
+              UNION ALL
+              SELECT 'event_manpower', COUNT(*)::int
+              FROM event_manpower em
+              JOIN events e ON e.event_id = em.event_id
+              WHERE e.game_id = @gameId
+              UNION ALL
+              SELECT 'event_manpower_matches', COUNT(*)::int
+              FROM event_manpower em
+              JOIN events e ON e.event_id = em.event_id
+              WHERE e.game_id = @gameId AND em.matches_situation_code",
+            conn);
+        cmd.Parameters.Add("gameId", NpgsqlDbType.Integer).Value = gameId;
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            counts[reader.GetString(0)] = reader.GetInt32(1);
+        }
+
+        return counts;
     }
 }

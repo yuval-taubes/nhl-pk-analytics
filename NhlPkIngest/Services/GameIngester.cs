@@ -32,6 +32,24 @@ public class GameIngester
         var pbp = await _apiClient.GetPlayByPlayAsync(gameId);
         if (pbp == null) return false;
 
+        var shiftSource = await _apiClient.GetShiftChartsAsync(gameId);
+        var shiftRows = shiftSource.Rows;
+        if (shiftSource.Status == "request_error")
+        {
+            _logger.LogError(
+                "Shiftchart request failed for game {GameId}; preserving any existing game data",
+                gameId);
+            return false;
+        }
+
+        if (shiftRows.Count == 0 && await _dbManager.HasGameShiftsAsync(gameId))
+        {
+            _logger.LogError(
+                "Shiftcharts returned no rows for game {GameId}, but stored shifts exist; preserving the last-known-good game data",
+                gameId);
+            return false;
+        }
+
         // 1. Process teams
         var homeTeamId = pbp.HomeTeam!.Id;
         var awayTeamId = pbp.AwayTeam!.Id;
@@ -66,10 +84,26 @@ public class GameIngester
                 gamePlayers.Add(new GamePlayer { GameId = gameId, PlayerId = p.PlayerId, TeamId = p.TeamId });
             }
         }
+        foreach (var shiftPlayer in shiftRows.GroupBy(s => s.PlayerId).Select(g => g.First()))
+        {
+            if (shiftPlayer.PlayerId == 0 || players.Any(p => p.PlayerId == shiftPlayer.PlayerId)) continue;
+            players.Add(new Player
+            {
+                PlayerId = shiftPlayer.PlayerId,
+                FullName = $"{shiftPlayer.FirstName} {shiftPlayer.LastName}".Trim(),
+                Position = "NA"
+            });
+            gamePlayers.Add(new GamePlayer { GameId = gameId, PlayerId = shiftPlayer.PlayerId, TeamId = shiftPlayer.TeamId });
+        }
         var playerTeamLookup = gamePlayers
             .GroupBy(p => p.PlayerId)
             .ToDictionary(gp => gp.Key, gp => gp.First().TeamId);
 
+        var goalieIds = players
+            .Where(p => string.Equals(p.Position, "G", StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.PlayerId)
+            .ToHashSet();
+        var gameShifts = ProcessShifts(shiftRows, gameId, homeTeamId);
         // 4. Process events
         var (processedEvents, shots, eventPlayers) = ProcessEvents(
             pbp.Plays!, gameId, homeTeamId, awayTeamId, playerTeamLookup);
@@ -94,7 +128,9 @@ public class GameIngester
             await _dbManager.UpsertPlayersAsync(conn, transaction, players.DistinctBy(p => p.PlayerId).ToList());
             await _dbManager.DeleteGameDataAsync(conn, transaction, gameId);
             await _dbManager.UpsertGamesAsync(conn, transaction, new List<Game> { game });
+            await _dbManager.UpsertShiftSourceStatusAsync(conn, transaction, gameId, shiftSource);
             await _dbManager.UpsertGamePlayersAsync(conn, transaction, gamePlayers);
+            await _dbManager.InsertGameShiftsAsync(conn, gameShifts);
 
             // Events must be inserted before possessions (need event_ids)
             await _dbManager.InsertEventsAsync(conn, processedEvents.Select(e => e.ToEvent()).ToList());
@@ -104,6 +140,20 @@ public class GameIngester
             for (int i = 0; i < processedEvents.Count; i++)
             {
                 processedEvents[i].EventId = eventIds[i];
+            }
+
+            List<EventOnIcePlayer> eventOnIcePlayers;
+            List<EventManpower> eventManpower;
+            if (gameShifts.Count == 0)
+            {
+                _logger.LogWarning("Game {GameId} has no shiftchart rows; skipping event on-ice and manpower derivation", gameId);
+                eventOnIcePlayers = new List<EventOnIcePlayer>();
+                eventManpower = new List<EventManpower>();
+            }
+            else
+            {
+                (eventOnIcePlayers, eventManpower) = DeriveEventOnIce(
+                    processedEvents, gameShifts, goalieIds, homeTeamId, awayTeamId);
             }
 
             // Update possessions with real event IDs
@@ -149,6 +199,8 @@ public class GameIngester
             }
 
             await _dbManager.InsertEventPlayersAsync(conn, eventPlayers);
+            await _dbManager.InsertEventOnIcePlayersAsync(conn, eventOnIcePlayers);
+            await _dbManager.InsertEventManpowerAsync(conn, eventManpower);
 
             await transaction.CommitAsync();
             _logger.LogInformation("Game {GameId} ingested successfully: {EventCount} events, {ShotCount} shots, {PossessionCount} possessions",
@@ -163,6 +215,119 @@ public class GameIngester
         }
     }
 
+    private static List<GameShift> ProcessShifts(
+        List<NhlShiftChartRow> shiftRows,
+        int gameId,
+        int homeTeamId)
+    {
+        var shifts = new List<GameShift>();
+
+        foreach (var row in shiftRows)
+        {
+            var startSeconds = ParseTimeInPeriod(row.StartTime);
+            var endSeconds = ParseTimeInPeriod(row.EndTime);
+            var durationSeconds = ParseTimeInPeriod(row.Duration);
+            if (row.PlayerId == 0 || row.TeamId == 0 || row.Period <= 0 || durationSeconds <= 0 || endSeconds <= startSeconds)
+            {
+                continue;
+            }
+
+            shifts.Add(new GameShift
+            {
+                SourceShiftId = row.Id,
+                GameId = gameId,
+                PlayerId = row.PlayerId,
+                TeamId = row.TeamId,
+                IsHome = row.TeamId == homeTeamId,
+                Period = row.Period,
+                ShiftNumber = row.ShiftNumber,
+                StartTime = row.StartTime,
+                EndTime = row.EndTime,
+                Duration = row.Duration,
+                StartSeconds = startSeconds,
+                EndSeconds = endSeconds,
+                StartGameSeconds = startSeconds + (1200 * (row.Period - 1)),
+                EndGameSeconds = endSeconds + (1200 * (row.Period - 1)),
+                DurationSeconds = durationSeconds
+            });
+        }
+
+        return shifts;
+    }
+
+    private static (List<EventOnIcePlayer> players, List<EventManpower> manpower) DeriveEventOnIce(
+        List<ProcessedEvent> events,
+        List<GameShift> shifts,
+        HashSet<int> goalieIds,
+        int homeTeamId,
+        int awayTeamId)
+    {
+        var eventPlayers = new List<EventOnIcePlayer>();
+        var manpower = new List<EventManpower>();
+
+        foreach (var evt in events)
+        {
+            var active = shifts
+                .Where(s => s.Period == evt.Period &&
+                            s.StartSeconds <= evt.PeriodTimeSeconds &&
+                            evt.PeriodTimeSeconds < s.EndSeconds)
+                .GroupBy(s => s.PlayerId)
+                .Select(g => g.First())
+                .ToList();
+
+            foreach (var player in active)
+            {
+                eventPlayers.Add(new EventOnIcePlayer
+                {
+                    EventId = evt.EventId,
+                    PlayerId = player.PlayerId,
+                    TeamId = player.TeamId,
+                    IsHome = player.IsHome,
+                    IsGoalie = goalieIds.Contains(player.PlayerId),
+                    OriginalEventIdx = evt.OriginalEventIdx
+                });
+            }
+
+            var homeActive = active.Where(p => p.TeamId == homeTeamId).ToList();
+            var awayActive = active.Where(p => p.TeamId == awayTeamId).ToList();
+            var homeGoalieId = homeActive.FirstOrDefault(p => goalieIds.Contains(p.PlayerId))?.PlayerId;
+            var awayGoalieId = awayActive.FirstOrDefault(p => goalieIds.Contains(p.PlayerId))?.PlayerId;
+            var homeSkaters = homeActive.Count(p => !goalieIds.Contains(p.PlayerId));
+            var awaySkaters = awayActive.Count(p => !goalieIds.Contains(p.PlayerId));
+
+            manpower.Add(new EventManpower
+            {
+                EventId = evt.EventId,
+                OriginalEventIdx = evt.OriginalEventIdx,
+                HomeSkatersShift = homeSkaters,
+                AwaySkatersShift = awaySkaters,
+                HomeGoalieId = homeGoalieId == 0 ? null : homeGoalieId,
+                AwayGoalieId = awayGoalieId == 0 ? null : awayGoalieId,
+                HomeGoaliePulled = homeGoalieId == null,
+                AwayGoaliePulled = awayGoalieId == null,
+                StrengthStateShift = StrengthStateForEventTeam(evt.EventTeamId, homeTeamId, awayTeamId, homeSkaters, awaySkaters),
+                StrengthCodeShift = StrengthCodeForEventTeam(evt.EventTeamId, homeTeamId, awayTeamId, homeSkaters, awaySkaters),
+                MatchesSituationCode = homeSkaters == evt.HomeSkaters && awaySkaters == evt.AwaySkaters
+            });
+        }
+
+        return (eventPlayers, manpower);
+    }
+
+    private static string StrengthStateForEventTeam(int? eventTeamId, int homeTeamId, int awayTeamId, int homeSkaters, int awaySkaters)
+    {
+        if (eventTeamId == awayTeamId) return $"{awaySkaters}v{homeSkaters}";
+        return $"{homeSkaters}v{awaySkaters}";
+    }
+
+    private static string? StrengthCodeForEventTeam(int? eventTeamId, int homeTeamId, int awayTeamId, int homeSkaters, int awaySkaters)
+    {
+        if (homeSkaters == 0 && awaySkaters == 0) return null;
+        if (homeSkaters == awaySkaters) return "EV";
+        if (eventTeamId == homeTeamId) return homeSkaters < awaySkaters ? "SH" : "PP";
+        if (eventTeamId == awayTeamId) return awaySkaters < homeSkaters ? "SH" : "PP";
+        return null;
+    }
     private (List<ProcessedEvent> events, List<Shot> shots, List<EventPlayer> eventPlayers)
         ProcessEvents(
             List<NhlPlay> plays,

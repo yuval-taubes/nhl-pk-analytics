@@ -95,6 +95,62 @@ public async Task<NhlPlayByPlayResponse?> GetPlayByPlayAsync(int gameId)
     return null;
 }
 
+
+    public async Task<ShiftSourceResult> GetShiftChartsAsync(int gameId)
+    {
+        var url = $"https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={gameId}";
+        for (int attempt = 1; attempt <= _maxRetries; attempt++)
+        {
+            try
+            {
+                _logger.LogDebug("Fetching shiftcharts for game {GameId}, attempt {Attempt}", gameId, attempt);
+                using var response = await _httpClient.GetAsync(url);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                    response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    _logger.LogWarning("Shiftcharts request failed for game {GameId}: {Status}", gameId, response.StatusCode);
+                    return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, HttpStatusCode = (int)response.StatusCode, ErrorMessage = $"HTTP {(int)response.StatusCode}" };
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var statusCode = (int)response.StatusCode;
+                    _logger.LogWarning("Shiftcharts for game {GameId} returned status {Status}", gameId, response.StatusCode);
+                    if ((statusCode == 429 || statusCode >= 500) && attempt < _maxRetries)
+                    {
+                        await Task.Delay(_delayMs * attempt);
+                        continue;
+                    }
+                    return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, HttpStatusCode = statusCode, ErrorMessage = $"HTTP {statusCode}" };
+                }
+
+                var shifts = await response.Content.ReadFromJsonAsync<NhlShiftChartResponse>();
+                var rows = shifts?.Data?.Where(s => !string.IsNullOrWhiteSpace(s.Duration)).ToList()
+                    ?? new List<NhlShiftChartRow>();
+                return new ShiftSourceResult { Status = rows.Count > 0 ? "available" : "missing_empty_response", EndpointUrl = url, HttpStatusCode = (int)response.StatusCode, Rows = rows };
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Attempt {Attempt} failed for game {GameId} shiftcharts", attempt, gameId);
+                if (attempt == _maxRetries) return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, ErrorMessage = ex.Message };
+                await Task.Delay(_delayMs * attempt);
+            }
+            catch (TaskCanceledException)
+            {
+                _logger.LogWarning("Timeout for game {GameId} shiftcharts, attempt {Attempt}", gameId, attempt);
+                if (attempt == _maxRetries) return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, ErrorMessage = "Request timed out" };
+                await Task.Delay(_delayMs * attempt);
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                _logger.LogWarning(ex, "JSON parse error for game {GameId} shiftcharts", gameId);
+                return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, ErrorMessage = ex.Message };
+            }
+        }
+
+        return new ShiftSourceResult { Status = "request_error", EndpointUrl = url, ErrorMessage = "Retry loop exhausted" };
+    }
     public async Task<List<int>> GetGameIdsForSeasonAsync(string season)
     {
         var gameIds = new HashSet<int>();
